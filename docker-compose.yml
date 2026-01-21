@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  bfmr-bot:
+    build: .
+    container_name: bfmr-bot
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    volumes:
+      # Persist data and logs
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # Persist browser sessions (login cookies)
+      - ./user_data_bfmr:/app/user_data_bfmr
+      - ./user_data_new:/app/user_data_new
+      - ./user_data_bestbuy:/app/user_data_bestbuy
+    environment:
+      - NODE_ENV=production
+      - HEADLESS=true
+      - BFMR_EMAIL=${BFMR_EMAIL}
+      - BFMR_PASSWORD=${BFMR_PASSWORD}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL}
+    # Required for Chrome in Docker
+    cap_add:
+      - SYS_ADMIN
+    # Security options for Chrome sandbox
+    security_opt:
+      - seccomp=unconfined
+

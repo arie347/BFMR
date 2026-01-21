@@ -226,6 +226,17 @@ app.post('/api/monitor/sync', async (req, res) => {
     }
 });
 
+// API: Test email
+app.post('/api/email/test', async (req, res) => {
+    try {
+        const emailService = require('../src/email-service');
+        const result = await emailService.sendTestEmail();
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Helper: Start auto polling
 function startAutoPolling() {
     const configPath = path.join(__dirname, '..', 'config.json');

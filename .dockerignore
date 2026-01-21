@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug/test files
+debug-*.js
+test-*.js
+*.png
+*.html
+screenshots/
+
+# Logs (will be mounted as volume)
+logs/
+
+# Data (will be mounted as volume)
+data/
+
+# User data (will be mounted as volumes)
+user_data/
+user_data_*/
+
+# Docs
+*.md
+!README.md
+

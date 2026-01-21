@@ -5,6 +5,7 @@ const BestBuyBuyer = require('./buyer/bestbuy');
 const BfmrWeb = require('./buyer/bfmr-web');
 const AmazonOrderTracker = require('./tracker/amazon-order-tracker');
 const logger = require('./logger');
+const emailService = require('./email-service');
 const fs = require('fs');
 const path = require('path');
 
@@ -337,6 +338,9 @@ class Monitor {
                 logger.log(`   ✅ Successfully added to cart! (Qty: ${result.quantity || 1})`);
                 logger.logDeal(deal, 'added_to_cart', `Added at ${result.url}`, result.quantity || 1, result.imageUrl);
                 this.dealManager.markAsProcessed(deal.deal_id);
+                
+                // Send email notification
+                emailService.sendDealNotification(deal, 'added_to_cart', 'amazon', result.quantity || 1, result.url);
             } else if (result.status === 'price_mismatch') {
                 logger.log(`   ⚠️ Price mismatch - Amazon: $${result.amazonPrice}, BFMR: $${result.bfmrRetailPrice}`, 'WARN');
                 logger.logDeal(deal, 'price_mismatch', `Amazon price ($${result.amazonPrice}) exceeds BFMR retail ($${result.bfmrRetailPrice})`, 0);
@@ -482,6 +486,9 @@ class Monitor {
             
             this.dealManager.markAsProcessed(deal.deal_id + '_bestbuy');
             logger.log(`   ✅ Best Buy deal ready for manual cart add!`);
+            
+            // Send email notification
+            emailService.sendDealNotification(deal, 'pending_manual_add', 'bestbuy', reserveResult.totalReserved, directBestBuyUrl);
 
         } catch (error) {
             logger.log(`   ❌ Error processing Best Buy deal: ${error.message}`, 'ERROR');

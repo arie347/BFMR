@@ -1,34 +1,5 @@
 {
   "polling_interval_minutes": 5,
-  "filters": {
-    "min_profit_margin_percent": 0,
-    "max_price": 10000,
-    "min_payout": 0,
-    "preferred_retailers": [
-      "Amazon"
-    ],
-    "excluded_retailers": [],
-    "only_open_deals": true,
-    "filter_full_retail": true,
-    "filter_above_retail": false
-  },
-  "price_tolerance": {
-    "enabled": true,
-    "type": "dollar",
-    "value": 0
-  },
-  "notifications": {
-    "desktop_notifications": true,
-    "sound_on_new_deal": false
-  },
-  "dry_run": true,
-  "auto_mode": false,
-  "enabled": false,
-  "interval_minutes": 30,
-  "bestbuy": {
-    "email": "",
-    "password": ""
-  },
   "retailer_settings": {
     "amazon": {
       "enabled": true
@@ -38,5 +9,35 @@
       "shipping_only": true,
       "max_distance_miles": 10
     }
-  }
+  },
+  "filters": {
+    "min_profit_margin_percent": 0,
+    "max_price": 10000,
+    "min_payout": 0,
+    "preferred_retailers": [],
+    "excluded_retailers": [],
+    "only_open_deals": true,
+    "filter_full_retail": true,
+    "filter_above_retail": false
+  },
+  "price_tolerance": {
+    "enabled": true,
+    "type": "dollar",
+    "value": 3
+  },
+  "sync_orders": {
+    "enabled": false,
+    "interval_minutes": null
+  },
+  "notifications": {
+    "desktop_notifications": true,
+    "sound_on_new_deal": false
+  },
+  "email": {
+    "enabled": false,
+    "resend_api_key": "",
+    "recipient": "",
+    "sender": "BFMR Bot <onboarding@resend.dev>"
+  },
+  "dry_run": true
 }
