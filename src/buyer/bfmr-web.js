@@ -953,22 +953,32 @@ class BfmrWeb {
      * @param {number} batchSize - Size of each reservation batch (default: 2)
      * @returns {Promise<{success: boolean, totalReserved: number, attempts: number}>}
      */
-    async reserveIncrementally(dealCode, batchSize = 2) {
-        console.log(`\n🔄 Starting incremental reservation for ${dealCode} (batch size: ${batchSize})`);
+    async reserveIncrementally(dealCode, batchSize = 2, maxToReserve = 50) {
+        console.log(`\n🔄 Starting incremental reservation for ${dealCode} (batch size: ${batchSize}, max: ${maxToReserve})`);
 
         let totalReserved = 0;
         let attempts = 0;
         let continueReserving = true;
 
         while (continueReserving) {
-            attempts++;
-            console.log(`\n📝 Attempt #${attempts}: Reserving ${batchSize} units...`);
+            // Check if we've reached our max
+            if (totalReserved >= maxToReserve) {
+                console.log(`✅ Reached our max limit of ${maxToReserve} units. Stopping.`);
+                break;
+            }
 
-            const result = await this.reserveDeal(dealCode, batchSize);
+            // Calculate how many to reserve in this batch (don't exceed max)
+            const remaining = maxToReserve - totalReserved;
+            const thisBatch = Math.min(batchSize, remaining);
+
+            attempts++;
+            console.log(`\n📝 Attempt #${attempts}: Reserving ${thisBatch} units (${totalReserved}/${maxToReserve} so far)...`);
+
+            const result = await this.reserveDeal(dealCode, thisBatch);
 
             if (result.success) {
-                totalReserved += batchSize;
-                console.log(`✅ Successfully reserved ${batchSize} units (Total: ${totalReserved})`);
+                totalReserved += thisBatch;
+                console.log(`✅ Successfully reserved ${thisBatch} units (Total: ${totalReserved}/${maxToReserve})`);
 
                 // Wait a bit between reservations to avoid rate limiting
                 await new Promise(resolve => setTimeout(resolve, 2000));
@@ -977,7 +987,7 @@ class BfmrWeb {
 
                 // Check if we hit the limit
                 if (result.status === 'limit_reached') {
-                    console.log(`✅ Hit reservation limit! Button became disabled.`);
+                    console.log(`✅ Hit BFMR reservation limit!`);
                     continueReserving = false;
                 } else if (result.status === 'closed' || result.status === 'error') {
                     console.log(`❌ Deal is closed or error occurred. Stopping.`);
@@ -991,7 +1001,7 @@ class BfmrWeb {
                 }
             }
 
-            // Safety limit: don't try more than 25 times (50 units max if batch=2)
+            // Safety limit: don't try more than 25 times
             if (attempts >= 25) {
                 console.log(`⚠️ Reached maximum attempts (${attempts}). Stopping for safety.`);
                 continueReserving = false;

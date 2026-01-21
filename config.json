@@ -2,12 +2,13 @@
   "polling_interval_minutes": 5,
   "retailer_settings": {
     "amazon": {
-      "enabled": true
+      "enabled": true,
+      "max_per_order": 3
     },
     "bestbuy": {
       "enabled": false,
-      "shipping_only": true,
-      "max_distance_miles": 10
+      "max_per_order": 2,
+      "shipping_only": true
     }
   },
   "filters": {

@@ -16,7 +16,9 @@ async function loadConfig() {
 
         if (config.retailer_settings) {
             document.getElementById('enable_amazon').checked = config.retailer_settings.amazon?.enabled !== false;
+            document.getElementById('amazon_max_per_order').value = config.retailer_settings.amazon?.max_per_order || 3;
             document.getElementById('enable_bestbuy').checked = config.retailer_settings.bestbuy?.enabled === true; // Default false
+            document.getElementById('bestbuy_max_per_order').value = config.retailer_settings.bestbuy?.max_per_order || 2;
         }
 
         // Load price tolerance
@@ -42,11 +44,14 @@ async function saveConfig() {
     const config = {
         polling_interval_minutes: parseInt(document.getElementById('polling_interval').value),
         retailer_settings: {
-            amazon: { enabled: document.getElementById('enable_amazon').checked },
+            amazon: { 
+                enabled: document.getElementById('enable_amazon').checked,
+                max_per_order: parseInt(document.getElementById('amazon_max_per_order').value) || 3
+            },
             bestbuy: {
                 enabled: document.getElementById('enable_bestbuy').checked,
-                shipping_only: true, // Preserve default for now as it's not in UI yet
-                max_distance_miles: 10
+                max_per_order: parseInt(document.getElementById('bestbuy_max_per_order').value) || 2,
+                shipping_only: true
             }
         },
         filters: {
