@@ -97,19 +97,21 @@ class BestBuyBuyer {
 
                 // Get price - Best Buy has various price selectors
                 const priceSelectors = [
-                    '[data-testid="customer-price"] span',
-                    '.priceView-customer-price span',
-                    '.priceView-hero-price span',
-                    '[class*="customerPrice"] span',
+                    '[data-testid="customer-price"]',
+                    '.priceView-customer-price',
+                    '.priceView-hero-price',
+                    '[class*="customerPrice"]',
                     '.pricing-price__regular-price',
-                    '[data-testid="price"]'
+                    '[data-testid="price"]',
+                    '.price-box'
                 ];
 
                 for (const selector of priceSelectors) {
                     const priceEl = document.querySelector(selector);
                     if (priceEl) {
                         const priceText = priceEl.innerText;
-                        const priceMatch = priceText.match(/\$?([\d,]+\.?\d*)/);
+                        // Match price pattern like $437.00 or $1,234.56
+                        const priceMatch = priceText.match(/\$\s*([\d,]+\.?\d*)/);
                         if (priceMatch) {
                             price = parseFloat(priceMatch[1].replace(',', ''));
                             break;
@@ -117,35 +119,57 @@ class BestBuyBuyer {
                     }
                 }
 
-                // Check stock status
+                // Check stock status - multiple strategies
                 const addToCartBtn = document.querySelector('[data-button-state="ADD_TO_CART"]');
                 const soldOutEl = document.querySelector('[data-button-state="SOLD_OUT"]');
                 const checkStoresEl = document.querySelector('[data-button-state="CHECK_STORES"]');
                 
-                // Also check for "Add to Cart" text
-                const buttonText = document.body.innerText;
+                // Also check for button text content
+                const pageText = document.body.innerText;
+                const allButtons = Array.from(document.querySelectorAll('button'));
+                const hasAddToCartButton = allButtons.some(b => 
+                    b.innerText.toLowerCase().includes('add to cart')
+                );
                 
-                if (addToCartBtn) {
+                if (addToCartBtn || hasAddToCartButton) {
                     inStock = true;
-                } else if (soldOutEl || buttonText.includes('Sold Out')) {
+                } else if (soldOutEl || pageText.includes('Sold Out') || pageText.includes('Coming Soon')) {
                     inStock = false;
-                } else if (checkStoresEl) {
+                } else if (checkStoresEl || pageText.includes('Check Stores')) {
                     // Available in stores only
                     inStock = false; // We only want shipping
+                } else {
+                    // If we found a price, assume it's available
+                    inStock = price !== null;
                 }
 
-                // Check for shipping availability
-                const shippingText = document.body.innerText;
-                const shipsToHome = shippingText.includes('Ships to') || 
-                                    shippingText.includes('Free shipping') ||
-                                    shippingText.includes('Get it by');
+                // Check for shipping availability - look for delivery/shipping related text
+                const shippingText = document.body.innerText.toLowerCase();
+                const shipsToHome = shippingText.includes('ships to') || 
+                                    shippingText.includes('free shipping') ||
+                                    shippingText.includes('get it by') ||
+                                    shippingText.includes('delivery') ||
+                                    shippingText.includes('ship to') ||
+                                    shippingText.includes('shipping') ||
+                                    hasAddToCartButton; // If can add to cart, assume shipping available
 
                 // Check condition (open-box, refurbished, etc.)
+                // Only mark as used if the MAIN product is used, not if there's an "Open-Box" option listed
+                const lowerTitle = title.toLowerCase();
                 const lowerText = document.body.innerText.toLowerCase();
-                if (lowerText.includes('open-box') || 
-                    lowerText.includes('refurbished') || 
-                    lowerText.includes('pre-owned') ||
-                    lowerText.includes('renewed')) {
+                
+                // Check if the product title itself indicates used/refurbished
+                if (lowerTitle.includes('open-box') || 
+                    lowerTitle.includes('refurbished') || 
+                    lowerTitle.includes('pre-owned') ||
+                    lowerTitle.includes('renewed') ||
+                    lowerTitle.includes('certified')) {
+                    condition = 'used';
+                }
+                // Also check if the page explicitly says this is an open-box item (not just an option)
+                else if (lowerText.includes('this is an open-box') || 
+                         lowerText.includes('refurbished item') ||
+                         lowerText.includes('certified pre-owned')) {
                     condition = 'used';
                 }
 

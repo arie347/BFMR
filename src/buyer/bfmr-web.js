@@ -509,7 +509,8 @@ class BfmrWeb {
                 const allLinks = Array.from(document.querySelectorAll('a[href]'));
                 for (const link of allLinks) {
                     const href = link.href;
-                    const text = link.innerText?.toLowerCase() || '';
+                    const text = link.innerText?.trim() || '';
+                    const textLower = text.toLowerCase();
                     
                     // Direct Best Buy link
                     if (href.includes('bestbuy.com')) {
@@ -520,16 +521,23 @@ class BfmrWeb {
                         break;
                     }
                     
-                    // Affiliate link that mentions Best Buy
-                    if ((href.includes('ftc.cash') || href.includes('fatcoupon')) && 
-                        (text.includes('best buy') || text.includes('bestbuy'))) {
-                        // We found an affiliate link for Best Buy
-                        // Store the affiliate URL, we'll need to extract SKU differently
-                        bestbuyUrl = href;
+                    // Affiliate link with 7-digit SKU as link text (Best Buy pattern)
+                    // BFMR shows links like: "6535042" → ftc.cash/xxxxx
+                    if ((href.includes('ftc.cash') || href.includes('fatcoupon'))) {
+                        // Check if link text is a 7-digit number (Best Buy SKU)
+                        if (/^\d{7}$/.test(text)) {
+                            bestbuySku = text;
+                            bestbuyUrl = href; // Keep affiliate URL as fallback
+                            console.log('Found Best Buy SKU from link text:', text);
+                        }
+                        // Also check if link text mentions Best Buy
+                        else if (textLower.includes('best buy') || textLower.includes('bestbuy')) {
+                            bestbuyUrl = href;
+                        }
                     }
                 }
                 
-                // If no direct URL found, try to find SKU in page content
+                // If no SKU found yet, try to find in page content
                 if (!bestbuySku) {
                     // Look for SKU patterns in the page text
                     const pageText = document.body.innerText;
