@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# User data (browser profiles with cookies/sessions)
+user_data/
+user_data_*/
+
+# Logs
+logs/
+*.log
+
+# Data files (contain personal order/deal history)
+data/
+
+# Screenshots and debug files
+screenshots/
+*.png
+*.html
+debug-*.js
+test-*.js
+*.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
