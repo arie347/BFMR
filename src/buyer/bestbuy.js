@@ -35,15 +35,15 @@ class BestBuyBuyer {
         }
 
         this.browser = await puppeteer.launch({
-            headless: true, // Always headless for Best Buy validation
-            defaultViewport: null,
+            headless: 'new', // Use new headless mode (harder to detect)
+            defaultViewport: { width: 1280, height: 800 },
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--window-size=1280,800',
                 '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu'
+                '--disable-blink-features=AutomationControlled',
+                '--disable-infobars',
+                '--window-size=1280,800'
             ],
             userDataDir: userDataDir
         });
@@ -67,13 +67,18 @@ class BestBuyBuyer {
             
             console.log(`   🔍 Validating Best Buy product: ${url}`);
             
-            await page.goto(url, {
-                waitUntil: 'domcontentloaded',
-                timeout: 30000
+            // Extra stealth: remove webdriver property
+            await page.evaluateOnNewDocument(() => {
+                Object.defineProperty(navigator, 'webdriver', { get: () => false });
             });
 
-            // Wait for page to load
-            await new Promise(r => setTimeout(r, 2000));
+            await page.goto(url, {
+                waitUntil: 'networkidle2',
+                timeout: 45000
+            });
+
+            // Wait longer for JS to render prices
+            await new Promise(r => setTimeout(r, 4000));
 
             // Check if we hit a CAPTCHA or blocking page
             const pageContent = await page.content();
@@ -84,38 +89,64 @@ class BestBuyBuyer {
                 return { valid: false, reason: 'bot_detected' };
             }
 
+            // Take screenshot for debugging
+            await page.screenshot({ path: 'bestbuy-debug.png' });
+            console.log('   📸 Screenshot saved to bestbuy-debug.png');
+
             // Extract product data
             const productData = await page.evaluate(() => {
                 let price = null;
                 let inStock = false;
                 let condition = 'new';
                 let title = '';
+                let debugInfo = {};
 
                 // Get title
                 const titleEl = document.querySelector('.sku-title h1, [data-testid="product-title"], h1');
                 if (titleEl) title = titleEl.innerText.trim();
+                debugInfo.title = title;
 
-                // Get price - Best Buy has various price selectors
+                // Get price - Best Buy has various price selectors (2025 updated)
                 const priceSelectors = [
+                    '[data-testid="customer-price"] span',
                     '[data-testid="customer-price"]',
+                    '.priceView-customer-price span',
                     '.priceView-customer-price',
+                    '.priceView-hero-price span',
                     '.priceView-hero-price',
+                    '[class*="customerPrice"] span',
                     '[class*="customerPrice"]',
                     '.pricing-price__regular-price',
                     '[data-testid="price"]',
-                    '.price-box'
+                    '.price-box',
+                    // Broader fallback - look for any price on the page
+                    '[class*="price"]'
                 ];
 
+                debugInfo.selectorsFound = [];
                 for (const selector of priceSelectors) {
                     const priceEl = document.querySelector(selector);
                     if (priceEl) {
                         const priceText = priceEl.innerText;
+                        debugInfo.selectorsFound.push({ selector, text: priceText?.substring(0, 50) });
                         // Match price pattern like $437.00 or $1,234.56
                         const priceMatch = priceText.match(/\$\s*([\d,]+\.?\d*)/);
                         if (priceMatch) {
                             price = parseFloat(priceMatch[1].replace(',', ''));
+                            debugInfo.matchedSelector = selector;
                             break;
                         }
+                    }
+                }
+                
+                // Fallback: search entire page for price pattern
+                if (!price) {
+                    const pageText = document.body.innerText;
+                    // Look for "Your price $XXX" or similar
+                    const fallbackMatch = pageText.match(/(?:Your price|Price|Now)\s*\$\s*([\d,]+\.?\d*)/i);
+                    if (fallbackMatch) {
+                        price = parseFloat(fallbackMatch[1].replace(',', ''));
+                        debugInfo.matchedFallback = fallbackMatch[0];
                     }
                 }
 
@@ -173,32 +204,44 @@ class BestBuyBuyer {
                     condition = 'used';
                 }
 
-                return { price, inStock, shipsToHome, condition, title };
+                return { price, inStock, shipsToHome, condition, title, debugInfo };
             });
 
-            console.log(`   📦 Best Buy: ${productData.title?.substring(0, 50)}...`);
-            console.log(`   💰 Price: $${productData.price}`);
+            console.log(`   📦 Best Buy: ${productData.title?.substring(0, 50) || '(no title)'}...`);
+            console.log(`   💰 Price: $${productData.price || 'NOT FOUND'}`);
             console.log(`   📦 In Stock: ${productData.inStock}`);
             console.log(`   🚚 Ships to Home: ${productData.shipsToHome}`);
+            
+            // Debug info if price not found
+            if (!productData.price && productData.debugInfo) {
+                console.log(`   🔍 Debug: Found ${productData.debugInfo.selectorsFound?.length || 0} price elements`);
+                if (productData.debugInfo.selectorsFound?.length > 0) {
+                    console.log(`   🔍 First element: ${JSON.stringify(productData.debugInfo.selectorsFound[0])}`);
+                }
+            }
 
             // Validate price
             if (!productData.price) {
+                await page.close();
                 return { valid: false, reason: 'price_detection_failed' };
             }
 
             // Check if product is used/refurbished
             if (productData.condition === 'used') {
+                await page.close();
                 return { valid: false, reason: 'used_or_renewed' };
             }
 
             // Check stock
             if (!productData.inStock) {
+                await page.close();
                 return { valid: false, reason: 'out_of_stock' };
             }
 
             // Check shipping (we only want items that ship to home)
             const shippingOnly = this.config.retailer_settings?.bestbuy?.shipping_only !== false;
             if (shippingOnly && !productData.shipsToHome) {
+                await page.close();
                 return { valid: false, reason: 'no_shipping', message: 'Pickup only, no shipping available' };
             }
 
@@ -215,6 +258,7 @@ class BestBuyBuyer {
             }
 
             if (productData.price > maxAllowedPrice) {
+                await page.close();
                 return {
                     valid: false,
                     reason: 'price_mismatch',
@@ -225,6 +269,7 @@ class BestBuyBuyer {
             }
 
             // All checks passed!
+            await page.close();
             return {
                 valid: true,
                 bestbuyPrice: productData.price,

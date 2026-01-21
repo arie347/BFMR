@@ -6,7 +6,7 @@
       "max_per_order": 3
     },
     "bestbuy": {
-      "enabled": false,
+      "enabled": true,
       "max_per_order": 2,
       "shipping_only": true
     }
