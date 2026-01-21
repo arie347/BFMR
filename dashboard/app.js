@@ -136,8 +136,8 @@ async function loadHistory() {
         const response = await fetch(`${API_URL}/history`);
         const fullHistory = await response.json();
 
-        // Filter for ONLY successful deals for this section
-        const successStatuses = ['browser_opened', 'added_to_cart', 'added_to_cart_dry_run', 'added_to_cart_no_checkout'];
+        // Filter for ONLY successful deals for this section (including pending_manual_add for Best Buy)
+        const successStatuses = ['browser_opened', 'added_to_cart', 'added_to_cart_dry_run', 'added_to_cart_no_checkout', 'pending_manual_add'];
         const history = fullHistory.filter(deal => successStatuses.includes(deal.action));
 
         const historyList = document.getElementById('historyList');
@@ -147,26 +147,51 @@ async function loadHistory() {
             return;
         }
 
-        historyList.innerHTML = history.map(deal => `
+        historyList.innerHTML = history.map(deal => {
+            // Determine retailer
+            const retailer = deal.retailer || 
+                (deal.bestbuyUrl ? 'bestbuy' : 
+                 deal.amazonUrl ? 'amazon' : 'amazon');
+            
+            const retailerLabel = retailer === 'bestbuy' ? 'Best Buy' : 'Amazon';
+            const retailerBadgeStyle = retailer === 'bestbuy' 
+                ? 'background: #0046be; color: #fff;' 
+                : 'background: #f0c14b; color: #111;';
+            
+            // Get the appropriate URL
+            const url = retailer === 'bestbuy' ? deal.bestbuyUrl : deal.amazonUrl;
+            const hasUrl = url && url.startsWith('http');
+            
+            // Is this a manual add required item?
+            const isManualAdd = deal.action === 'pending_manual_add';
+            
+            return `
             <div class="deal-item">
                 <div style="display: flex; gap: 15px;">
                     ${deal.imageUrl ? `<img src="${deal.imageUrl}" alt="${deal.title}" style="width: 80px; height: 80px; object-fit: contain; border-radius: 4px; border: 1px solid #eee;">` : ''}
                     <div style="flex: 1;">
                         <h3 style="margin-top: 0;">${deal.title}</h3>
                         <p>Code: ${deal.deal_code} | Price: $${deal.retail_price} → $${deal.payout_price}</p>
-                        <p>Action: ${deal.action} ${deal.quantity > 1 ? `| <strong>Qty: ${deal.quantity}</strong>` : ''}</p>
-                        ${deal.result.startsWith('Added at ') || deal.result.startsWith('Opened at ') ?
-                `<a href="${deal.result.replace('Added at ', '').replace('Opened at ', '')}" target="_blank" class="btn btn-small">View on Amazon</a>` :
-                `<p>Result: ${deal.result}</p>`
-            }
-                        <div style="margin-top: 10px;">
+                        <p>
+                            <span style="${retailerBadgeStyle} padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">${retailerLabel}</span>
+                            ${deal.quantity ? ` <strong style="margin-left: 10px;">${isManualAdd ? '⚠️ Qty to add:' : 'Qty:'} ${deal.quantity}</strong>` : ''}
+                            ${isManualAdd ? '<span style="margin-left: 10px; color: #e67e22; font-size: 12px;">(Manual add required)</span>' : ''}
+                        </p>
+                        <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                            ${hasUrl && isManualAdd && retailer === 'bestbuy' ?
+                                `<a href="${url}" target="_blank" class="btn" style="background: linear-gradient(180deg, #0066cc 0%, #0046be 100%); color: #fff; font-weight: 600; padding: 10px 20px; font-size: 14px; border: none; border-radius: 6px; text-decoration: none; box-shadow: 0 2px 4px rgba(0,70,190,0.3);">🛒 Add to Cart on Best Buy</a>` :
+                                hasUrl ?
+                                `<a href="${url}" target="_blank" class="btn btn-small" style="${retailerBadgeStyle} border: 1px solid ${retailer === 'bestbuy' ? '#003c9e' : '#a88734'};">View on ${retailerLabel}</a>` :
+                                `<span style="color: #999; font-size: 12px;">Result: ${deal.result}</span>`
+                            }
+                            ${deal.bfmrUrl ? `<a href="${deal.bfmrUrl}" target="_blank" class="btn btn-small" style="background: #3498db; color: #fff;">View on BFMR</a>` : ''}
                             <button onclick="deleteMissedDeal('${deal.timestamp}')" class="btn btn-small" style="background: #fee; color: #c0392b; border: 1px solid #fab;">🗑️ Delete</button>
                         </div>
-                        <p style="font-size: 11px; color: #999;">${new Date(deal.timestamp).toLocaleString()}</p>
+                        <p style="font-size: 11px; color: #999; margin-top: 8px;">${new Date(deal.timestamp).toLocaleString()}</p>
                     </div>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     } catch (error) {
         console.error('Error loading history:', error);
     }
@@ -179,8 +204,9 @@ async function loadMissedDeals() {
         const history = await response.json();
 
         // Filter for ANY deal that isn't a success, but excluding valid skips
-        const successStatuses = ['browser_opened', 'added_to_cart', 'added_to_cart_dry_run', 'added_to_cart_no_checkout'];
-        const excludedErrors = ['price_mismatch', 'out_of_stock', 'used_or_renewed']; // Also exclude used/renewed as that's a valid skip
+        // Note: pending_manual_add is treated as success (shows in Recent Scrapes, not here)
+        const successStatuses = ['browser_opened', 'added_to_cart', 'added_to_cart_dry_run', 'added_to_cart_no_checkout', 'pending_manual_add'];
+        const excludedErrors = ['price_mismatch', 'out_of_stock', 'used_or_renewed', 'wrong_retailer'];
 
         const missedDeals = history.filter(deal =>
             !successStatuses.includes(deal.action) &&
@@ -194,26 +220,34 @@ async function loadMissedDeals() {
             return;
         }
 
-        listContainer.innerHTML = missedDeals.map(deal => `
+        listContainer.innerHTML = missedDeals.map(deal => {
+            const retailer = deal.retailer || 'amazon';
+            const retailerLabel = retailer === 'bestbuy' ? 'Best Buy' : 'Amazon';
+            
+            return `
             <div class="deal-item" id="deal-${deal.timestamp}">
                 <div class="deal-badge deal-badge-warning">${deal.action}</div>
                 <div style="display: flex; gap: 15px; align-items: flex-start;">
                     ${deal.imageUrl ? `<img src="${deal.imageUrl}" alt="${deal.title}" style="width: 80px; height: 80px; object-fit: contain; border-radius: 4px; border: 1px solid #eee;">` : ''}
                     <div style="flex: 1;">
                         <h3 style="margin-top: 0;">${deal.title}</h3>
-                        <p>Code: ${deal.deal_code} | BFMR Price: $${deal.retail_price}</p>
+                        <p>Code: ${deal.deal_code} | BFMR Price: $${deal.retail_price} 
+                            <span style="background: ${retailer === 'bestbuy' ? '#0046be' : '#f0c14b'}; color: ${retailer === 'bestbuy' ? '#fff' : '#111'}; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-left: 8px;">${retailerLabel}</span>
+                        </p>
                         <p style="color: #e74c3c;"><strong>Error:</strong> ${deal.result}</p>
                         <p style="font-size: 11px; color: #999;">${new Date(deal.timestamp).toLocaleString()}</p>
                         
-                        <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+                        <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            ${deal.bfmrUrl ? `<a href="${deal.bfmrUrl}" target="_blank" class="btn btn-small" style="background: #3498db; color: #fff;">View on BFMR</a>` : ''}
                             ${deal.amazonUrl ? `<a href="${deal.amazonUrl}" target="_blank" class="btn btn-small" style="background: #f0c14b; color: #111; border: 1px solid #a88734;">View on Amazon</a>` : ''}
+                            ${deal.bestbuyUrl ? `<a href="${deal.bestbuyUrl}" target="_blank" class="btn btn-small" style="background: #0046be; color: #fff;">View on Best Buy</a>` : ''}
                             <button onclick="retryDeal('${deal.deal_code}')" class="btn btn-small btn-primary">🔄 Retry Deal</button>
                             <button onclick="deleteMissedDeal('${deal.timestamp}')" class="btn btn-small" style="background: #fee; color: #c0392b; border: 1px solid #fab;">🗑️ Delete</button>
                         </div>
                     </div>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     } catch (error) {
         console.error('Error loading missed deals:', error);
     }

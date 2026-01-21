@@ -30,7 +30,7 @@ class Logger {
         fs.appendFileSync(logFile, logMessage);
     }
 
-    logDeal(deal, action, result, quantity = 1, imageUrl = null) {
+    logDeal(deal, action, result, quantity = 1, imageUrl = null, retailer = 'amazon', retailerUrl = null) {
         const entry = {
             timestamp: new Date().toISOString(),
             deal_id: deal.deal_id,
@@ -42,10 +42,14 @@ class Logger {
             result: result,
             quantity: quantity,
             imageUrl: imageUrl,
-            amazonUrl: deal.amazon_link || null
+            retailer: retailer,
+            amazonUrl: retailer === 'amazon' ? (retailerUrl || deal.amazon_link || null) : null,
+            bestbuyUrl: retailer === 'bestbuy' ? (retailerUrl || deal.bestbuy_link || null) : null,
+            bfmrUrl: `https://bfmr.com/deals/${deal.deal_code}`
         };
 
-        this.log(`Deal: ${deal.title} (${deal.deal_code}) - Action: ${action} - Result: ${result} - Qty: ${quantity}`);
+        const retailerLabel = retailer === 'bestbuy' ? 'Best Buy' : 'Amazon';
+        this.log(`Deal: ${deal.title} (${deal.deal_code}) - ${retailerLabel} - Action: ${action} - Result: ${result} - Qty: ${quantity}`);
         this.addToHistory(entry);
     }
 

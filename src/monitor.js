@@ -1,6 +1,7 @@
 const BfmrClient = require('./bfmr-client');
 const DealManager = require('./deal-manager');
 const AmazonBuyer = require('./buyer/amazon');
+const BestBuyBuyer = require('./buyer/bestbuy');
 const BfmrWeb = require('./buyer/bfmr-web');
 const AmazonOrderTracker = require('./tracker/amazon-order-tracker');
 const logger = require('./logger');
@@ -11,6 +12,7 @@ class Monitor {
     constructor() {
         this.bfmrClient = new BfmrClient();
         this.amazonBuyer = new AmazonBuyer();
+        this.bestbuyBuyer = new BestBuyBuyer();
         this.bfmrWeb = new BfmrWeb();
         this.dealManager = new DealManager(this.bfmrClient, this.bfmrWeb);
         this.amazonTracker = new AmazonOrderTracker(this);
@@ -161,6 +163,7 @@ class Monitor {
             try {
                 logger.log('🧹 Cleaning up browsers...');
                 await this.amazonBuyer.closeBrowser();
+                await this.bestbuyBuyer.closeBrowser();
                 await this.bfmrWeb.close();
                 logger.log('✅ Browsers closed successfully');
             } catch (cleanupError) {
@@ -169,26 +172,54 @@ class Monitor {
         }
     }
     async processDeal(deal) {
+        // Reload config to pick up any changes
+        this.config = this.loadConfig();
+        
+        const amazonEnabled = this.config.retailer_settings?.amazon?.enabled !== false;
+        const bestbuyEnabled = this.config.retailer_settings?.bestbuy?.enabled === true;
+        
         // Extract Amazon link
         let amazonLink = null;
+        let bestbuyLink = null;
 
         // Simplified Link Finder
         if (deal.items && deal.items[0] && deal.items[0].retailer_links) {
-            const link = deal.items[0].retailer_links.find(l => l.retailer && l.retailer.toLowerCase().includes('amazon'));
-            if (link) amazonLink = link.url;
+            const amazonLinkObj = deal.items[0].retailer_links.find(l => l.retailer && l.retailer.toLowerCase().includes('amazon'));
+            if (amazonLinkObj) amazonLink = amazonLinkObj.url;
+            
+            const bestbuyLinkObj = deal.items[0].retailer_links.find(l => l.retailer && l.retailer.toLowerCase().includes('best buy'));
+            if (bestbuyLinkObj) bestbuyLink = bestbuyLinkObj.url;
         }
 
         // Fallback structure
-        if (!amazonLink && deal.items && deal.items.items && Array.isArray(deal.items.items)) {
-            const item = deal.items.items.find(i => i.retailer && i.retailer.toLowerCase().includes('amazon'));
-            if (item) amazonLink = item.url;
+        if (deal.items && deal.items.items && Array.isArray(deal.items.items)) {
+            if (!amazonLink) {
+                const item = deal.items.items.find(i => i.retailer && i.retailer.toLowerCase().includes('amazon'));
+                if (item) amazonLink = item.url;
+            }
+            if (!bestbuyLink) {
+                const item = deal.items.items.find(i => i.retailer && i.retailer.toLowerCase().includes('best buy'));
+                if (item) bestbuyLink = item.url;
+            }
         }
 
-        if (amazonLink) {
-            deal.amazon_link = amazonLink; // Attach for logging
+        // Process Amazon if enabled and link exists
+        if (amazonEnabled && amazonLink) {
+            deal.amazon_link = amazonLink;
             await this.processAmazonDeal(deal, amazonLink);
-        } else {
-            logger.log(`Skipping ${deal.title} - No Amazon link found`, 'WARN');
+        }
+        
+        // Process Best Buy if enabled and link exists
+        if (bestbuyEnabled && bestbuyLink) {
+            deal.bestbuy_link = bestbuyLink;
+            await this.processBestBuyDeal(deal, bestbuyLink);
+        }
+        
+        // Log if no actionable links found
+        if (!amazonLink && !bestbuyLink) {
+            logger.log(`Skipping ${deal.title} - No retailer links found`, 'WARN');
+        } else if (!amazonEnabled && !bestbuyEnabled) {
+            logger.log(`Skipping ${deal.title} - No retailers enabled in config`, 'WARN');
         }
     }
 
@@ -346,6 +377,119 @@ class Monitor {
         }
     }
 
+    async processBestBuyDeal(deal, bestbuyLink) {
+        logger.log(`📦 Processing Best Buy: ${deal.title}`);
+        logger.log(`   Price: $${deal.retail_price} → Payout: $${deal.payout_price}`);
+        logger.log(`   Best Buy Link: ${bestbuyLink}`);
+
+        try {
+            // STEP 1: Get Best Buy URL from BFMR (the link might be an affiliate link)
+            // We'll scrape the deal page to get the direct Best Buy URL or SKU
+            const bfmrEmail = process.env.BFMR_EMAIL;
+            const bfmrPassword = process.env.BFMR_PASSWORD;
+            
+            if (!bfmrEmail || !bfmrPassword) {
+                logger.log('   ⚠️ BFMR credentials missing - Cannot reserve - Skipping', 'WARN');
+                logger.logDeal(deal, 'no_credentials', 'BFMR reservation required but credentials not provided', 0, null, 'bestbuy');
+                return;
+            }
+
+            logger.log('   🔐 Logging in to BFMR...');
+            const loginResult = await this.bfmrWeb.login(bfmrEmail, bfmrPassword);
+
+            if (!loginResult.success) {
+                logger.log(`   ❌ BFMR login failed: ${loginResult.error}`, 'ERROR');
+                logger.logDeal(deal, 'login_failed', `BFMR Auth Failed: ${loginResult.error}`, 0, null, 'bestbuy');
+                return;
+            }
+
+            // Scrape deal page for Best Buy URL, limit, and image
+            logger.log('   📄 Scraping BFMR deal page...');
+            const bfmrData = await this.bfmrWeb.scrapeDealPage(deal.deal_code);
+            
+            // Use scraped Best Buy URL if available (it's the direct URL, not affiliate)
+            let directBestBuyUrl = bfmrData.bestbuyUrl || bestbuyLink;
+            
+            // If we still have an affiliate link, try to construct from SKU
+            if (directBestBuyUrl.includes('ftc.cash') || directBestBuyUrl.includes('fatcoupon')) {
+                if (bfmrData.bestbuySku) {
+                    directBestBuyUrl = `https://www.bestbuy.com/site/${bfmrData.bestbuySku}.p?skuId=${bfmrData.bestbuySku}`;
+                    logger.log(`   ✅ Constructed direct Best Buy URL: ${directBestBuyUrl}`);
+                } else {
+                    logger.log('   ⚠️ Could not get direct Best Buy URL - affiliate link may not work', 'WARN');
+                }
+            }
+
+            // STEP 2: Validate on Best Buy (price, stock, condition)
+            logger.log('   🔍 Validating Best Buy product...');
+            const validation = await this.bestbuyBuyer.validateProduct(directBestBuyUrl, deal.retail_price);
+
+            if (!validation.valid) {
+                if (validation.reason === 'price_mismatch') {
+                    logger.log(`   ⚠️ Price mismatch - Best Buy: $${validation.bestbuyPrice}, BFMR: $${validation.bfmrRetailPrice}`, 'WARN');
+                    logger.logDeal(deal, 'price_mismatch', `Best Buy price ($${validation.bestbuyPrice}) exceeds BFMR retail ($${validation.bfmrRetailPrice})`, 0, null, 'bestbuy');
+                } else if (validation.reason === 'out_of_stock') {
+                    logger.log('   ⚠️ Out of stock - skipping', 'WARN');
+                    logger.logDeal(deal, 'out_of_stock', 'Product unavailable', 0, null, 'bestbuy');
+                } else if (validation.reason === 'used_or_renewed') {
+                    logger.log('   ⚠️ Product is used/renewed/refurbished - skipping', 'WARN');
+                    logger.logDeal(deal, 'used_or_renewed', 'Product is not new', 0, null, 'bestbuy');
+                } else if (validation.reason === 'bot_detected') {
+                    logger.log('   ⚠️ Best Buy bot detection triggered - skipping', 'WARN');
+                    logger.logDeal(deal, 'bot_detected', 'Best Buy blocked validation', 0, null, 'bestbuy');
+                } else if (validation.reason === 'no_shipping') {
+                    logger.log('   ⚠️ No shipping available (pickup only) - skipping', 'WARN');
+                    logger.logDeal(deal, 'no_shipping', 'Pickup only, no shipping', 0, null, 'bestbuy');
+                } else {
+                    logger.log(`   ⚠️ Validation failed: ${validation.reason}`, 'WARN');
+                    logger.logDeal(deal, 'validation_failed', validation.reason, 0, null, 'bestbuy');
+                }
+                this.dealManager.markAsProcessed(deal.deal_id + '_bestbuy'); // Mark Best Buy as processed
+                return;
+            }
+
+            logger.log('   ✅ Best Buy validation passed');
+
+            // STEP 3: Reserve on BFMR
+            if (!bfmrData.limit) {
+                logger.log('   ⚠️ No BFMR limit found - Cannot reserve - Skipping', 'WARN');
+                logger.logDeal(deal, 'no_limit', 'Cannot determine BFMR quantity limit', 0, null, 'bestbuy');
+                return;
+            }
+
+            logger.log('   📝 Attempting incremental reservation (batches of 2 until limit)...');
+            const reserveResult = await this.bfmrWeb.reserveIncrementally(deal.deal_code, 2);
+
+            if (!reserveResult.success || reserveResult.totalReserved === 0) {
+                logger.log('   ❌ Could not reserve any units - Skipping', 'WARN');
+                logger.logDeal(deal, 'reservation_failed', 'BFMR reservation failed: no units reserved', 0, null, 'bestbuy');
+                return;
+            }
+
+            logger.log(`   ✅ Reserved ${reserveResult.totalReserved} units on BFMR`);
+
+            // STEP 4: Log as pending manual add (no auto-cart for Best Buy)
+            logger.log(`   🛒 Best Buy requires manual add - logging for dashboard`);
+            logger.logDeal(
+                deal, 
+                'pending_manual_add', 
+                `Reserved ${reserveResult.totalReserved} on BFMR - Add manually`, 
+                reserveResult.totalReserved, 
+                bfmrData.imageUrl,
+                'bestbuy',
+                directBestBuyUrl
+            );
+            
+            this.dealManager.markAsProcessed(deal.deal_id + '_bestbuy');
+            logger.log(`   ✅ Best Buy deal ready for manual cart add!`);
+
+        } catch (error) {
+            logger.log(`   ❌ Error processing Best Buy deal: ${error.message}`, 'ERROR');
+            logger.logDeal(deal, 'error', error.message, 0, null, 'bestbuy');
+            this.dealManager.markAsFailed(deal.deal_id + '_bestbuy');
+        }
+    }
+
     async retryDeal(dealCode) {
         if (!this.isRunning) {
             throw new Error('Monitor must be running to retry a deal');
@@ -381,6 +525,7 @@ class Monitor {
         this.stopPolling();
         this.isRunning = false;
         await this.amazonBuyer.closeBrowser();
+        await this.bestbuyBuyer.closeBrowser();
         await this.bfmrWeb.close();
         logger.log('🛑 Monitor stopped');
     }

@@ -501,7 +501,54 @@ class BfmrWeb {
                     if (amazonLink) break;
                 }
 
-                return { limit, imageUrl, amazonLink };
+                // Scrape Best Buy Link/SKU
+                let bestbuyUrl = null;
+                let bestbuySku = null;
+                
+                // Look for Best Buy links (including ftc.cash affiliate links)
+                const allLinks = Array.from(document.querySelectorAll('a[href]'));
+                for (const link of allLinks) {
+                    const href = link.href;
+                    const text = link.innerText?.toLowerCase() || '';
+                    
+                    // Direct Best Buy link
+                    if (href.includes('bestbuy.com')) {
+                        bestbuyUrl = href;
+                        // Try to extract SKU from URL
+                        const skuMatch = href.match(/skuId=(\d+)/i) || href.match(/\/(\d{7,})(?:\?|$|\.)/);
+                        if (skuMatch) bestbuySku = skuMatch[1];
+                        break;
+                    }
+                    
+                    // Affiliate link that mentions Best Buy
+                    if ((href.includes('ftc.cash') || href.includes('fatcoupon')) && 
+                        (text.includes('best buy') || text.includes('bestbuy'))) {
+                        // We found an affiliate link for Best Buy
+                        // Store the affiliate URL, we'll need to extract SKU differently
+                        bestbuyUrl = href;
+                    }
+                }
+                
+                // If no direct URL found, try to find SKU in page content
+                if (!bestbuySku) {
+                    // Look for SKU patterns in the page text
+                    const pageText = document.body.innerText;
+                    const skuPatterns = [
+                        /Best Buy.*?SKU[:\s]*(\d{7,})/i,
+                        /SKU[:\s]*(\d{7,}).*?Best Buy/i,
+                        /bestbuy\.com.*?(\d{7,})/i
+                    ];
+                    
+                    for (const pattern of skuPatterns) {
+                        const match = pageText.match(pattern);
+                        if (match) {
+                            bestbuySku = match[1];
+                            break;
+                        }
+                    }
+                }
+
+                return { limit, imageUrl, amazonLink, bestbuyUrl, bestbuySku };
             });
 
 
@@ -700,10 +747,20 @@ class BfmrWeb {
                 console.log('✅ BFMR image found: ' + data.imageUrl);
             }
 
+            // If we have a Best Buy SKU but no direct URL, construct one
+            if (data.bestbuySku && !data.bestbuyUrl?.includes('bestbuy.com')) {
+                data.bestbuyUrl = `https://www.bestbuy.com/site/${data.bestbuySku}.p?skuId=${data.bestbuySku}`;
+                console.log('✅ Constructed Best Buy URL from SKU: ' + data.bestbuyUrl);
+            }
+            
+            if (data.bestbuyUrl) {
+                console.log('✅ Best Buy URL found: ' + data.bestbuyUrl);
+            }
+
             return data;
         } catch (error) {
             console.error('Error scraping BFMR deal page:', error.message);
-            return { limit: null, imageUrl: null, amazonLink: null };
+            return { limit: null, imageUrl: null, amazonLink: null, bestbuyUrl: null, bestbuySku: null };
         } finally {
             if (page) await page.close();
         }
