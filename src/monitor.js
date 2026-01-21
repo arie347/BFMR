@@ -252,7 +252,8 @@ class Monitor {
                     logger.log(`   ⚠️ Validation failed: ${validation.reason}`, 'WARN');
                     logger.logDeal(deal, 'validation_failed', validation.reason, 0);
                 }
-                this.dealManager.markAsProcessed(deal.deal_id);
+                // Use markAsFailed so deal can be retried next run (prices/stock may change)
+                this.dealManager.markAsFailed(deal.deal_id);
                 return; // Skip BFMR reservation
             }
 
@@ -347,21 +348,21 @@ class Monitor {
                 // Remove from BFMR tracker since we're not buying it
                 logger.log('   🗑️ Removing from BFMR tracker...');
                 await this.bfmrWeb.unreserveDeal(deal.deal_code);
-                this.dealManager.markAsProcessed(deal.deal_id); // Don't retry
+                this.dealManager.markAsFailed(deal.deal_id); // Can retry if price drops
             } else if (result.status === 'out_of_stock') {
                 logger.log('   ⚠️  Out of stock - skipping', 'WARN');
                 logger.logDeal(deal, 'out_of_stock', 'Product unavailable', 0);
                 // Remove from BFMR tracker since we're not buying it
                 logger.log('   🗑️ Removing from BFMR tracker...');
                 await this.bfmrWeb.unreserveDeal(deal.deal_code);
-                this.dealManager.markAsProcessed(deal.deal_id); // Mark as processed so we don't retry immediately
+                this.dealManager.markAsFailed(deal.deal_id); // Can retry if stock returns
             } else if (result.status === 'used_or_renewed') {
                 logger.log('   ⚠️  Product is used/renewed/refurbished - skipping', 'WARN');
                 logger.logDeal(deal, 'used_or_renewed', 'Product is not new', 0);
                 // Remove from BFMR tracker since we're not buying it
                 logger.log('   🗑️ Removing from BFMR tracker...');
                 await this.bfmrWeb.unreserveDeal(deal.deal_code);
-                this.dealManager.markAsProcessed(deal.deal_id); // Don't retry used items
+                this.dealManager.markAsFailed(deal.deal_id); // Can retry (condition might be mislabeled)
             } else if (result.status === 'verification_failed') {
                 logger.log('   ⚠️  Added but could not verify cart - check manually', 'WARN');
                 logger.logDeal(deal, 'verification_failed', 'Cart verification failed', 0);
@@ -448,7 +449,8 @@ class Monitor {
                     logger.log(`   ⚠️ Validation failed: ${validation.reason}`, 'WARN');
                     logger.logDeal(deal, 'validation_failed', validation.reason, 0, null, 'bestbuy');
                 }
-                this.dealManager.markAsProcessed(deal.deal_id + '_bestbuy'); // Mark Best Buy as processed
+                // Use markAsFailed so deal can be retried next run (prices/stock may change)
+                this.dealManager.markAsFailed(deal.deal_id + '_bestbuy');
                 return;
             }
 

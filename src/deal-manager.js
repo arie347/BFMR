@@ -166,10 +166,14 @@ class DealManager {
             const actionableDeals = [];
 
             for (const deal of apiDeals) {
-                // Skip if already processed or currently processing
-                if (this.processedDeals.has(deal.deal_id) || this.processingDeals.has(deal.deal_id)) {
+                // Skip if currently being processed (prevents concurrent processing of same deal)
+                if (this.processingDeals.has(deal.deal_id)) {
                     continue;
                 }
+                
+                // NOTE: We no longer skip based on processedDeals
+                // Instead, we always try to reserve on BFMR - it will tell us if limit reached
+                // This allows catching restocks when more quantity becomes available
 
                 if (this.isDealActionable(deal)) {
                     actionableDeals.push(deal);
@@ -189,10 +193,9 @@ class DealManager {
         // Handle both nested filters object (from config.json) and flat config (fallback)
         const filters = this.config.filters || this.config;
 
-        // Skip if already processed (this check is also in fetchAndFilterDeals, but good for direct calls)
-        if (this.processedDeals.has(deal.deal_id)) {
-            return false;
-        }
+        // NOTE: We no longer skip based on processedDeals
+        // We always try to reserve on BFMR - it will tell us if limit reached
+        // This allows catching restocks when more quantity becomes available
 
         // Skip if deal has already been ordered (Order Manager)
         if (OrderManager.hasDeal(deal.deal_code)) {

@@ -34,9 +34,9 @@
     "sound_on_new_deal": false
   },
   "email": {
-    "enabled": false,
-    "resend_api_key": "",
-    "recipient": "",
+    "enabled": true,
+    "resend_api_key": "re_SAL32Z7e_3aM5NbowuLVtoiFVNsoRSQaC",
+    "recipient": "laibikop@gmail.com",
     "sender": "BFMR Bot <onboarding@resend.dev>"
   },
   "dry_run": true
