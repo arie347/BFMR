@@ -17,17 +17,37 @@ class BestBuyBuyer {
     }
 
     /**
+     * Extract SKU from Best Buy URL
+     */
+    extractSKU(url) {
+        // Match patterns like /6575101.p or skuId=6575101
+        const skuMatch = url.match(/\/(\d{7})\.p/) || url.match(/skuId=(\d+)/);
+        return skuMatch ? skuMatch[1] : null;
+    }
+
+    /**
      * Fetch HTML via ScraperAPI (free tier: 5,000 requests/month)
-     * Sign up at https://www.scraperapi.com/
+     * Uses search page approach since product pages get blocked
      */
     async fetchWithScraperAPI(url) {
         const apiKey = this.config.retailer_settings?.bestbuy?.scraper_api_key;
         if (!apiKey) return null;
 
-        const scraperUrl = `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(url)}&render=true`;
+        // Extract SKU and use search page (more reliable than product pages)
+        const sku = this.extractSKU(url);
+        if (!sku) {
+            console.log('   ⚠️ Could not extract SKU from URL');
+            return null;
+        }
+
+        // Search by SKU - this works better than product pages via ScraperAPI
+        const searchUrl = `https://www.bestbuy.com/site/searchpage.jsp?st=${sku}&intl=nosplash`;
+        const scraperUrl = `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(searchUrl)}&render=true&country_code=us`;
+        
+        console.log(`   🔍 Searching Best Buy for SKU: ${sku}`);
         
         return new Promise((resolve, reject) => {
-            const req = http.get(scraperUrl, { timeout: 60000 }, (res) => {
+            const req = http.get(scraperUrl, { timeout: 90000 }, (res) => {
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => resolve(data));
@@ -38,7 +58,8 @@ class BestBuyBuyer {
     }
 
     /**
-     * Parse Best Buy HTML to extract price, stock, and other product info
+     * Parse Best Buy search results HTML to extract price, stock, and product info
+     * Works with search results page (more reliable via ScraperAPI)
      */
     parseProductHTML(html) {
         let price = null;
@@ -47,63 +68,56 @@ class BestBuyBuyer {
         let shipsToHome = false;
         let condition = 'new';
 
-        // Extract title
-        const titleMatch = html.match(/<h1[^>]*class="[^"]*sku-title[^"]*"[^>]*>(.*?)<\/h1>/is) ||
-                          html.match(/<h1[^>]*>(.*?)<\/h1>/is);
+        const htmlLower = html.toLowerCase();
+
+        // For search results, look for first product listing with price
+        // Search results have product cards with prices in format "$XXX.XX"
+        
+        // Extract title from first product in search results
+        const titleMatch = html.match(/class="[^"]*sku-title[^"]*"[^>]*>.*?<a[^>]*>(.*?)<\/a>/is) ||
+                          html.match(/class="[^"]*sku-header[^"]*"[^>]*>(.*?)<\/[^>]+>/is);
         if (titleMatch) {
             title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
         }
 
-        // Extract price - look for customer price patterns
-        const pricePatterns = [
-            /\$\s*([\d,]+\.?\d*)/g,  // Any dollar amount
-            /data-testid="customer-price"[^>]*>.*?\$\s*([\d,]+\.?\d*)/is,
-            /class="[^"]*priceView-customer-price[^"]*"[^>]*>.*?\$\s*([\d,]+\.?\d*)/is,
-            /class="[^"]*customerPrice[^"]*"[^>]*>.*?\$\s*([\d,]+\.?\d*)/is,
-        ];
-
-        // Find all prices on the page and use the first reasonable one
-        const allPrices = [];
-        const priceRegex = /\$\s*([\d,]+\.?\d*)/g;
-        let match;
-        while ((match = priceRegex.exec(html)) !== null) {
-            const p = parseFloat(match[1].replace(',', ''));
-            // Only consider prices in a reasonable range (not cents, not millions)
-            if (p >= 1 && p <= 50000) {
-                allPrices.push(p);
+        // Find prices - look for the main product price (usually $XX.XX or $XXX.XX format)
+        // Search results show prices like "$249.99" prominently
+        const priceMatches = html.match(/\$(\d{1,4}\.\d{2})/g);
+        if (priceMatches && priceMatches.length > 0) {
+            // Filter to reasonable product prices (not $0.99 accessories or $9999 bundles)
+            const validPrices = priceMatches
+                .map(p => parseFloat(p.replace('$', '').replace(',', '')))
+                .filter(p => p >= 10 && p <= 5000);
+            
+            if (validPrices.length > 0) {
+                // First valid price is usually the main product
+                price = validPrices[0];
             }
         }
 
-        // Use the first significant price (usually the main product price)
-        if (allPrices.length > 0) {
-            price = allPrices[0];
-        }
-
-        // Check stock
-        const htmlLower = html.toLowerCase();
+        // Check stock - search results show "Add to Cart" for in-stock items
         if (htmlLower.includes('add to cart') || htmlLower.includes('addtocart')) {
             inStock = true;
         }
+        // Search results show "Sold Out" for unavailable items
         if (htmlLower.includes('sold out') || htmlLower.includes('coming soon')) {
             inStock = false;
         }
 
-        // Check shipping
+        // Check shipping - search results often show "Get it by" or "Free shipping"
         if (htmlLower.includes('ships to') || htmlLower.includes('free shipping') ||
-            htmlLower.includes('get it by') || htmlLower.includes('delivery')) {
+            htmlLower.includes('get it by') || htmlLower.includes('delivery') ||
+            htmlLower.includes('shipping')) {
             shipsToHome = true;
         }
-        // If can add to cart, assume shipping is available
-        if (inStock) shipsToHome = true;
+        // If we found a product with price, assume it ships
+        if (price && inStock) shipsToHome = true;
 
-        // Check condition
-        if (htmlLower.includes('open-box') || htmlLower.includes('refurbished') ||
-            htmlLower.includes('pre-owned') || htmlLower.includes('renewed')) {
-            // Only mark as used if in the title
-            if (title.toLowerCase().includes('open-box') || 
-                title.toLowerCase().includes('refurbished')) {
-                condition = 'used';
-            }
+        // Check condition - only mark used if explicitly in title
+        if (title.toLowerCase().includes('open-box') || 
+            title.toLowerCase().includes('refurbished') ||
+            title.toLowerCase().includes('renewed')) {
+            condition = 'used';
         }
 
         return { price, inStock, shipsToHome, condition, title };

@@ -3,13 +3,13 @@
   "retailer_settings": {
     "amazon": {
       "enabled": true,
-      "max_per_order": 3
+      "max_per_order": 10
     },
     "bestbuy": {
       "enabled": true,
-      "max_per_order": 2,
+      "max_per_order": 10,
       "shipping_only": true,
-      "scraper_api_key": ""
+      "scraper_api_key": "0b15d20f4547d2cf51d368fd32143d2b"
     }
   },
   "filters": {
@@ -19,27 +19,21 @@
     "preferred_retailers": [],
     "excluded_retailers": [],
     "only_open_deals": true,
-    "filter_full_retail": true,
+    "filter_full_retail": false,
     "filter_above_retail": false
   },
   "price_tolerance": {
     "enabled": true,
     "type": "dollar",
-    "value": 3
+    "value": 100
   },
   "sync_orders": {
     "enabled": false,
-    "interval_minutes": null
+    "interval_minutes": 30
   },
   "notifications": {
     "desktop_notifications": true,
     "sound_on_new_deal": false
-  },
-  "email": {
-    "enabled": true,
-    "resend_api_key": "re_SAL32Z7e_3aM5NbowuLVtoiFVNsoRSQaC",
-    "recipient": "laibikop@gmail.com",
-    "sender": "BFMR Bot <onboarding@resend.dev>"
   },
   "dry_run": true
 }

@@ -130,6 +130,9 @@ class Monitor {
         }
 
         this.isChecking = true;
+        
+        // Collect results for summary email
+        this.runResults = [];
 
         try {
             // Check login status first
@@ -159,6 +162,11 @@ class Monitor {
             logger.log(`Error checking deals: ${error.message}`, 'ERROR');
         } finally {
             this.isChecking = false;
+
+            // Send summary email if we have results
+            if (this.runResults && this.runResults.length > 0) {
+                await emailService.sendSummaryEmail(this.runResults);
+            }
 
             // Close browsers to prevent zombie processes and lock files
             try {
@@ -348,8 +356,15 @@ class Monitor {
                 logger.log(`   ✅ Amazon: Added ${result.quantity || quantity} to cart`);
                 logger.logDeal(deal, 'added_to_cart', `Added at ${result.url}`, result.quantity || quantity, imageUrl, 'amazon', result.url);
                 
-                // Send email notification
-                emailService.sendDealNotification(deal, 'added_to_cart', 'amazon', result.quantity || quantity, result.url);
+                // Collect result for summary email
+                this.runResults.push({
+                    deal,
+                    action: 'added_to_cart',
+                    retailer: 'amazon',
+                    quantity: result.quantity || quantity,
+                    url: result.url,
+                    success: true
+                });
             } else {
                 logger.log(`   ❌ Amazon: Failed - ${result.status || result.error}`);
                 logger.logDeal(deal, result.status || 'failed', result.error || 'Unknown error', 0, imageUrl, 'amazon');
@@ -373,8 +388,15 @@ class Monitor {
             bestbuyUrl
         );
         
-        // Send email notification
-        emailService.sendDealNotification(deal, 'pending_manual_add', 'bestbuy', quantity, bestbuyUrl);
+        // Collect result for summary email
+        this.runResults.push({
+            deal,
+            action: 'pending_manual_add',
+            retailer: 'bestbuy',
+            quantity,
+            url: bestbuyUrl,
+            success: true
+        });
         
         logger.log(`   ✅ Best Buy: Ready for manual add`);
     }

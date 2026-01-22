@@ -205,6 +205,182 @@ class EmailService {
         }
     }
 
+    /**
+     * Send a summary email with all deals processed in a run
+     * @param {Array} results - Array of { deal, action, retailer, quantity, url, success }
+     */
+    async sendSummaryEmail(results) {
+        if (!this.resend) {
+            console.log('📧 Summary email skipped - service not configured');
+            return { success: false, reason: 'not_configured' };
+        }
+
+        const recipientEmail = this.getRecipientEmail();
+        if (!recipientEmail) {
+            console.log('📧 Summary email skipped - no recipient email configured');
+            return { success: false, reason: 'no_recipient' };
+        }
+
+        if (!results || results.length === 0) {
+            console.log('📧 Summary email skipped - no deals to report');
+            return { success: false, reason: 'no_deals' };
+        }
+
+        // Categorize results
+        const amazonAdded = results.filter(r => r.retailer === 'amazon' && r.success);
+        const bestbuyPending = results.filter(r => r.retailer === 'bestbuy' && r.success);
+        const failed = results.filter(r => !r.success);
+
+        const totalQuantity = results.filter(r => r.success).reduce((sum, r) => sum + (r.quantity || 0), 0);
+        const totalProfit = results.filter(r => r.success).reduce((sum, r) => {
+            const profit = (r.deal.payout_price - r.deal.retail_price) * (r.quantity || 0);
+            return sum + profit;
+        }, 0);
+
+        // Build subject
+        let subject = '📦 BFMR Run Summary: ';
+        if (amazonAdded.length > 0) subject += `${amazonAdded.length} Amazon `;
+        if (bestbuyPending.length > 0) subject += `${bestbuyPending.length} Best Buy `;
+        if (amazonAdded.length === 0 && bestbuyPending.length === 0) subject += 'No deals processed';
+
+        // Build HTML
+        const renderDealRow = (r) => {
+            const profit = (r.deal.payout_price - r.deal.retail_price).toFixed(2);
+            const retailerColor = r.retailer === 'bestbuy' ? '#0046be' : '#f0c14b';
+            const retailerTextColor = r.retailer === 'bestbuy' ? '#fff' : '#111';
+            const retailerLabel = r.retailer === 'bestbuy' ? 'Best Buy' : 'Amazon';
+            
+            return `
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 12px 8px;">
+                        <div style="font-weight: 500; color: #333;">${r.deal.title.substring(0, 50)}${r.deal.title.length > 50 ? '...' : ''}</div>
+                        <div style="font-size: 12px; color: #666;">${r.deal.deal_code}</div>
+                    </td>
+                    <td style="padding: 12px 8px; text-align: center;">
+                        <span style="background: ${retailerColor}; color: ${retailerTextColor}; padding: 2px 8px; border-radius: 4px; font-size: 11px;">${retailerLabel}</span>
+                    </td>
+                    <td style="padding: 12px 8px; text-align: center; font-weight: bold;">${r.quantity || 0}</td>
+                    <td style="padding: 12px 8px; text-align: right; color: #10b981; font-weight: bold;">+$${profit}</td>
+                    <td style="padding: 12px 8px; text-align: center;">
+                        ${r.url ? `<a href="${r.url}" style="color: #3b82f6; text-decoration: none;">View</a>` : '-'}
+                    </td>
+                </tr>
+            `;
+        };
+
+        const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
+    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+        <!-- Header -->
+        <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="margin: 0; font-size: 24px; color: #333;">📦 BFMR Run Summary</h1>
+            <p style="margin: 8px 0 0 0; color: #666; font-size: 14px;">${new Date().toLocaleString()}</p>
+        </div>
+
+        <!-- Stats -->
+        <div style="display: flex; justify-content: space-around; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+            <div style="text-align: center; padding: 16px; background: #f0fdf4; border-radius: 8px; min-width: 120px;">
+                <div style="font-size: 28px; font-weight: bold; color: #10b981;">${amazonAdded.length + bestbuyPending.length}</div>
+                <div style="font-size: 12px; color: #666;">Deals Processed</div>
+            </div>
+            <div style="text-align: center; padding: 16px; background: #fef3c7; border-radius: 8px; min-width: 120px;">
+                <div style="font-size: 28px; font-weight: bold; color: #f59e0b;">${totalQuantity}</div>
+                <div style="font-size: 12px; color: #666;">Total Units</div>
+            </div>
+            <div style="text-align: center; padding: 16px; background: #dcfce7; border-radius: 8px; min-width: 120px;">
+                <div style="font-size: 28px; font-weight: bold; color: #16a34a;">+$${totalProfit.toFixed(2)}</div>
+                <div style="font-size: 12px; color: #666;">Potential Profit</div>
+            </div>
+        </div>
+
+        ${amazonAdded.length > 0 ? `
+        <!-- Amazon Section -->
+        <div style="margin-bottom: 24px;">
+            <h3 style="margin: 0 0 12px 0; padding: 8px 12px; background: #f0c14b; color: #111; border-radius: 6px;">
+                🛒 Added to Amazon Cart (${amazonAdded.length})
+            </h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 8px; text-align: left;">Product</th>
+                        <th style="padding: 8px; text-align: center;">Retailer</th>
+                        <th style="padding: 8px; text-align: center;">Qty</th>
+                        <th style="padding: 8px; text-align: right;">Profit/Unit</th>
+                        <th style="padding: 8px; text-align: center;">Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${amazonAdded.map(renderDealRow).join('')}
+                </tbody>
+            </table>
+        </div>
+        ` : ''}
+
+        ${bestbuyPending.length > 0 ? `
+        <!-- Best Buy Section -->
+        <div style="margin-bottom: 24px;">
+            <h3 style="margin: 0 0 12px 0; padding: 8px 12px; background: #0046be; color: #fff; border-radius: 6px;">
+                ⏳ Best Buy - Ready for Manual Add (${bestbuyPending.length})
+            </h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 8px; text-align: left;">Product</th>
+                        <th style="padding: 8px; text-align: center;">Retailer</th>
+                        <th style="padding: 8px; text-align: center;">Qty</th>
+                        <th style="padding: 8px; text-align: right;">Profit/Unit</th>
+                        <th style="padding: 8px; text-align: center;">Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${bestbuyPending.map(renderDealRow).join('')}
+                </tbody>
+            </table>
+        </div>
+        ` : ''}
+
+        ${amazonAdded.length === 0 && bestbuyPending.length === 0 ? `
+        <div style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px;">
+            <p style="margin: 0; color: #666; font-size: 16px;">No deals matched your criteria this run.</p>
+        </div>
+        ` : ''}
+
+        <!-- Footer -->
+        <div style="text-align: center; color: #999; font-size: 12px; border-top: 1px solid #eee; padding-top: 16px; margin-top: 24px;">
+            <p style="margin: 0;">BFMR Auto-Buyer Bot</p>
+        </div>
+    </div>
+</body>
+</html>
+        `;
+
+        try {
+            const { data, error } = await this.resend.emails.send({
+                from: this.getSenderEmail(),
+                to: recipientEmail,
+                subject: subject,
+                html: html
+            });
+
+            if (error) {
+                console.error('📧 Summary email error:', error);
+                return { success: false, error: error.message };
+            }
+
+            console.log(`📧 Summary email sent: ${subject}`);
+            return { success: true, id: data.id };
+        } catch (error) {
+            console.error('📧 Summary email error:', error.message);
+            return { success: false, error: error.message };
+        }
+    }
+
     async sendTestEmail() {
         if (!this.resend) {
             return { success: false, error: 'Email service not configured. Add RESEND_API_KEY to config or environment.' };
