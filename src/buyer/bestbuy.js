@@ -2,6 +2,8 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+const http = require('http');
 
 puppeteer.use(StealthPlugin());
 
@@ -12,6 +14,99 @@ class BestBuyBuyer {
         // Load config
         const configPath = path.join(__dirname, '../../config.json');
         this.config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    }
+
+    /**
+     * Fetch HTML via ScraperAPI (free tier: 5,000 requests/month)
+     * Sign up at https://www.scraperapi.com/
+     */
+    async fetchWithScraperAPI(url) {
+        const apiKey = this.config.retailer_settings?.bestbuy?.scraper_api_key;
+        if (!apiKey) return null;
+
+        const scraperUrl = `http://api.scraperapi.com?api_key=${apiKey}&url=${encodeURIComponent(url)}&render=true`;
+        
+        return new Promise((resolve, reject) => {
+            const req = http.get(scraperUrl, { timeout: 60000 }, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve(data));
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+        });
+    }
+
+    /**
+     * Parse Best Buy HTML to extract price, stock, and other product info
+     */
+    parseProductHTML(html) {
+        let price = null;
+        let inStock = false;
+        let title = '';
+        let shipsToHome = false;
+        let condition = 'new';
+
+        // Extract title
+        const titleMatch = html.match(/<h1[^>]*class="[^"]*sku-title[^"]*"[^>]*>(.*?)<\/h1>/is) ||
+                          html.match(/<h1[^>]*>(.*?)<\/h1>/is);
+        if (titleMatch) {
+            title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
+        }
+
+        // Extract price - look for customer price patterns
+        const pricePatterns = [
+            /\$\s*([\d,]+\.?\d*)/g,  // Any dollar amount
+            /data-testid="customer-price"[^>]*>.*?\$\s*([\d,]+\.?\d*)/is,
+            /class="[^"]*priceView-customer-price[^"]*"[^>]*>.*?\$\s*([\d,]+\.?\d*)/is,
+            /class="[^"]*customerPrice[^"]*"[^>]*>.*?\$\s*([\d,]+\.?\d*)/is,
+        ];
+
+        // Find all prices on the page and use the first reasonable one
+        const allPrices = [];
+        const priceRegex = /\$\s*([\d,]+\.?\d*)/g;
+        let match;
+        while ((match = priceRegex.exec(html)) !== null) {
+            const p = parseFloat(match[1].replace(',', ''));
+            // Only consider prices in a reasonable range (not cents, not millions)
+            if (p >= 1 && p <= 50000) {
+                allPrices.push(p);
+            }
+        }
+
+        // Use the first significant price (usually the main product price)
+        if (allPrices.length > 0) {
+            price = allPrices[0];
+        }
+
+        // Check stock
+        const htmlLower = html.toLowerCase();
+        if (htmlLower.includes('add to cart') || htmlLower.includes('addtocart')) {
+            inStock = true;
+        }
+        if (htmlLower.includes('sold out') || htmlLower.includes('coming soon')) {
+            inStock = false;
+        }
+
+        // Check shipping
+        if (htmlLower.includes('ships to') || htmlLower.includes('free shipping') ||
+            htmlLower.includes('get it by') || htmlLower.includes('delivery')) {
+            shipsToHome = true;
+        }
+        // If can add to cart, assume shipping is available
+        if (inStock) shipsToHome = true;
+
+        // Check condition
+        if (htmlLower.includes('open-box') || htmlLower.includes('refurbished') ||
+            htmlLower.includes('pre-owned') || htmlLower.includes('renewed')) {
+            // Only mark as used if in the title
+            if (title.toLowerCase().includes('open-box') || 
+                title.toLowerCase().includes('refurbished')) {
+                condition = 'used';
+            }
+        }
+
+        return { price, inStock, shipsToHome, condition, title };
     }
 
     async init() {
@@ -51,11 +146,100 @@ class BestBuyBuyer {
 
     /**
      * Validate a Best Buy product - check price, stock, and condition
+     * Uses ScraperAPI if configured (free tier: 5,000 requests/month)
+     * Falls back to Puppeteer if no API key is set
+     * 
      * @param {string} url - Best Buy product URL
      * @param {number} bfmrRetailPrice - Expected retail price from BFMR
      * @returns {object} - { valid: boolean, reason?: string, bestbuyPrice?: number, inStock?: boolean }
      */
     async validateProduct(url, bfmrRetailPrice) {
+        const scraperApiKey = this.config.retailer_settings?.bestbuy?.scraper_api_key;
+        
+        // Try ScraperAPI first if key is configured (FREE: 5,000 req/month)
+        if (scraperApiKey) {
+            return this.validateWithScraperAPI(url, bfmrRetailPrice);
+        }
+        
+        // Fall back to Puppeteer (may get blocked by Best Buy)
+        return this.validateWithPuppeteer(url, bfmrRetailPrice);
+    }
+
+    /**
+     * Validate using ScraperAPI (free, reliable, anti-bot bypass)
+     */
+    async validateWithScraperAPI(url, bfmrRetailPrice) {
+        console.log(`   🔍 Validating Best Buy (via ScraperAPI): ${url}`);
+        
+        try {
+            const html = await this.fetchWithScraperAPI(url);
+            if (!html) {
+                return { valid: false, reason: 'scraper_api_error' };
+            }
+
+            const productData = this.parseProductHTML(html);
+            
+            console.log(`   📦 Best Buy: ${productData.title?.substring(0, 50) || '(no title)'}...`);
+            console.log(`   💰 Price: $${productData.price || 'NOT FOUND'}`);
+            console.log(`   📦 In Stock: ${productData.inStock}`);
+            console.log(`   🚚 Ships to Home: ${productData.shipsToHome}`);
+
+            // Validate - same logic as Puppeteer version
+            if (!productData.price) {
+                return { valid: false, reason: 'price_detection_failed' };
+            }
+
+            if (productData.condition === 'used') {
+                return { valid: false, reason: 'used_or_renewed' };
+            }
+
+            if (!productData.inStock) {
+                return { valid: false, reason: 'out_of_stock' };
+            }
+
+            const shippingOnly = this.config.retailer_settings?.bestbuy?.shipping_only !== false;
+            if (shippingOnly && !productData.shipsToHome) {
+                return { valid: false, reason: 'no_shipping' };
+            }
+
+            // Check price tolerance
+            const tolerance = this.config.price_tolerance || { enabled: false };
+            let maxAllowedPrice = bfmrRetailPrice;
+            if (tolerance.enabled) {
+                if (tolerance.type === 'dollar') {
+                    maxAllowedPrice = bfmrRetailPrice + (tolerance.value || 0);
+                } else if (tolerance.type === 'percent') {
+                    maxAllowedPrice = bfmrRetailPrice * (1 + (tolerance.value || 0) / 100);
+                }
+            }
+
+            if (productData.price > maxAllowedPrice) {
+                return {
+                    valid: false,
+                    reason: 'price_mismatch',
+                    bestbuyPrice: productData.price,
+                    bfmrRetailPrice: bfmrRetailPrice,
+                    maxAllowedPrice: maxAllowedPrice
+                };
+            }
+
+            return {
+                valid: true,
+                bestbuyPrice: productData.price,
+                inStock: productData.inStock,
+                title: productData.title
+            };
+
+        } catch (error) {
+            console.error('   ❌ ScraperAPI error:', error.message);
+            return { valid: false, reason: 'scraper_api_error', message: error.message };
+        }
+    }
+
+    /**
+     * Validate using Puppeteer (may get blocked by Best Buy's anti-bot)
+     */
+    async validateWithPuppeteer(url, bfmrRetailPrice) {
         if (!this.browser) await this.init();
 
         let page = null;
@@ -65,7 +249,8 @@ class BestBuyBuyer {
             // Set a realistic user agent
             await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
             
-            console.log(`   🔍 Validating Best Buy product: ${url}`);
+            console.log(`   🔍 Validating Best Buy (Puppeteer): ${url}`);
+            console.log(`   ⚠️ Note: Set scraper_api_key in config for reliable Best Buy validation`);
             
             // Extra stealth: remove webdriver property
             await page.evaluateOnNewDocument(() => {

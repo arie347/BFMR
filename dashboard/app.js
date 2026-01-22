@@ -19,6 +19,7 @@ async function loadConfig() {
             document.getElementById('amazon_max_per_order').value = config.retailer_settings.amazon?.max_per_order || 3;
             document.getElementById('enable_bestbuy').checked = config.retailer_settings.bestbuy?.enabled === true; // Default false
             document.getElementById('bestbuy_max_per_order').value = config.retailer_settings.bestbuy?.max_per_order || 2;
+            document.getElementById('scraper_api_key').value = config.retailer_settings.bestbuy?.scraper_api_key || '';
         }
 
         // Load price tolerance
@@ -51,7 +52,8 @@ async function saveConfig() {
             bestbuy: {
                 enabled: document.getElementById('enable_bestbuy').checked,
                 max_per_order: parseInt(document.getElementById('bestbuy_max_per_order').value) || 2,
-                shipping_only: true
+                shipping_only: true,
+                scraper_api_key: document.getElementById('scraper_api_key').value || ''
             }
         },
         filters: {
