@@ -63,28 +63,23 @@ class BestBuyBuyer {
      */
     parseProductHTML(html) {
         let price = null;
-        let inStock = false;
+        let inStock = true; // Default to true if we find a price (more optimistic)
         let title = '';
-        let shipsToHome = false;
+        let shipsToHome = true; // Default to true for online products
         let condition = 'new';
 
-        const htmlLower = html.toLowerCase();
-
-        // For search results, look for first product listing with price
-        // Search results have product cards with prices in format "$XXX.XX"
-        
         // Extract title from first product in search results
         const titleMatch = html.match(/class="[^"]*sku-title[^"]*"[^>]*>.*?<a[^>]*>(.*?)<\/a>/is) ||
-                          html.match(/class="[^"]*sku-header[^"]*"[^>]*>(.*?)<\/[^>]+>/is);
+                          html.match(/class="[^"]*sku-header[^"]*"[^>]*>(.*?)<\/[^>]+>/is) ||
+                          html.match(/<title>([^<]+) - Best Buy<\/title>/i);
         if (titleMatch) {
             title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
         }
 
-        // Find prices - look for the main product price (usually $XX.XX or $XXX.XX format)
-        // Search results show prices like "$249.99" prominently
+        // Find prices - look for the main product price
         const priceMatches = html.match(/\$(\d{1,4}\.\d{2})/g);
         if (priceMatches && priceMatches.length > 0) {
-            // Filter to reasonable product prices (not $0.99 accessories or $9999 bundles)
+            // Filter to reasonable product prices (not cents or huge bundles)
             const validPrices = priceMatches
                 .map(p => parseFloat(p.replace('$', '').replace(',', '')))
                 .filter(p => p >= 10 && p <= 5000);
@@ -95,23 +90,33 @@ class BestBuyBuyer {
             }
         }
 
-        // Check stock - search results show "Add to Cart" for in-stock items
-        if (htmlLower.includes('add to cart') || htmlLower.includes('addtocart')) {
-            inStock = true;
-        }
-        // Search results show "Sold Out" for unavailable items
-        if (htmlLower.includes('sold out') || htmlLower.includes('coming soon')) {
+        // More targeted stock detection:
+        // Look for specific button states, not just text anywhere on page
+        
+        // Check for explicit SOLD_OUT button state (most reliable indicator)
+        if (html.includes('data-button-state="SOLD_OUT"') || 
+            html.includes('"buttonState":"SOLD_OUT"')) {
             inStock = false;
         }
+        
+        // Check for ADD_TO_CART button state (means it's in stock)
+        if (html.includes('data-button-state="ADD_TO_CART"') ||
+            html.includes('"buttonState":"ADD_TO_CART"')) {
+            inStock = true;
+        }
 
-        // Check shipping - search results often show "Get it by" or "Free shipping"
-        if (htmlLower.includes('ships to') || htmlLower.includes('free shipping') ||
-            htmlLower.includes('get it by') || htmlLower.includes('delivery') ||
-            htmlLower.includes('shipping')) {
+        // If we found a price and no explicit sold out, assume in stock
+        // This is more optimistic but reduces false negatives
+        if (price && !html.includes('data-button-state="SOLD_OUT"')) {
+            inStock = true;
+        }
+
+        // Check shipping - if product is online and has price, likely ships
+        if (html.toLowerCase().includes('get it by') || 
+            html.toLowerCase().includes('free shipping') ||
+            html.toLowerCase().includes('ships to')) {
             shipsToHome = true;
         }
-        // If we found a product with price, assume it ships
-        if (price && inStock) shipsToHome = true;
 
         // Check condition - only mark used if explicitly in title
         if (title.toLowerCase().includes('open-box') || 
