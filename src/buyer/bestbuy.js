@@ -60,33 +60,69 @@ class BestBuyBuyer {
     /**
      * Parse Best Buy search results HTML to extract price, stock, and product info
      * Works with search results page (more reliable via ScraperAPI)
+     * @param {string} html - The HTML content
+     * @param {string} sku - The SKU we're searching for (to match correct product)
      */
-    parseProductHTML(html) {
+    parseProductHTML(html, sku = null) {
         let price = null;
         let inStock = true; // Default to true if we find a price (more optimistic)
         let title = '';
         let shipsToHome = true; // Default to true for online products
         let condition = 'new';
 
-        // Extract title from first product in search results
-        const titleMatch = html.match(/class="[^"]*sku-title[^"]*"[^>]*>.*?<a[^>]*>(.*?)<\/a>/is) ||
-                          html.match(/class="[^"]*sku-header[^"]*"[^>]*>(.*?)<\/[^>]+>/is) ||
+        // If we have a SKU, try to find the specific product listing for that SKU
+        // Best Buy search results contain sku-id or data-sku-id attributes
+        let productSection = html;
+        if (sku) {
+            // Try to isolate the product section containing our SKU
+            // Look for list-item or product card containing this SKU
+            const skuPatterns = [
+                new RegExp(`<li[^>]*data-sku-id="${sku}"[^>]*>([\\s\\S]*?)<\\/li>`, 'i'),
+                new RegExp(`<div[^>]*sku-id="${sku}"[^>]*>([\\s\\S]*?)<\\/div>`, 'i'),
+                new RegExp(`href="[^"]*/${sku}\\.p[^"]*"[^>]*>([\\s\\S]{0,2000})`, 'i'),
+                // Find section around the SKU reference
+                new RegExp(`([\\s\\S]{500,2000}?${sku}[\\s\\S]{0,1500})`, 'i')
+            ];
+            
+            for (const pattern of skuPatterns) {
+                const match = html.match(pattern);
+                if (match) {
+                    productSection = match[0];
+                    break;
+                }
+            }
+        }
+
+        // Extract title from the product section
+        const titleMatch = productSection.match(/class="[^"]*sku-title[^"]*"[^>]*>.*?<a[^>]*>(.*?)<\/a>/is) ||
+                          productSection.match(/class="[^"]*sku-header[^"]*"[^>]*>(.*?)<\/[^>]+>/is) ||
                           html.match(/<title>([^<]+) - Best Buy<\/title>/i);
         if (titleMatch) {
             title = titleMatch[1].replace(/<[^>]*>/g, '').trim();
         }
 
-        // Find prices - look for the main product price
-        const priceMatches = html.match(/\$(\d{1,4}\.\d{2})/g);
-        if (priceMatches && priceMatches.length > 0) {
-            // Filter to reasonable product prices (not cents or huge bundles)
-            const validPrices = priceMatches
-                .map(p => parseFloat(p.replace('$', '').replace(',', '')))
-                .filter(p => p >= 10 && p <= 5000);
-            
-            if (validPrices.length > 0) {
-                // First valid price is usually the main product
-                price = validPrices[0];
+        // Find price from the product section first, then fall back to full page
+        // Look for customer-price specifically (the main sale price)
+        const customerPriceMatch = productSection.match(/customer-price[^>]*>.*?\$\s*([\d,]+\.?\d*)/is) ||
+                                   productSection.match(/priceView-hero-price[^>]*>.*?\$\s*([\d,]+\.?\d*)/is);
+        if (customerPriceMatch) {
+            price = parseFloat(customerPriceMatch[1].replace(',', ''));
+        }
+        
+        // If no customer-price found, look for regular price patterns in product section
+        if (!price) {
+            const priceMatches = productSection.match(/\$(\d{1,4}(?:,\d{3})*\.?\d*)/g);
+            if (priceMatches && priceMatches.length > 0) {
+                // Filter to reasonable product prices
+                const validPrices = priceMatches
+                    .map(p => parseFloat(p.replace('$', '').replace(',', '')))
+                    .filter(p => p >= 10 && p <= 5000);
+                
+                if (validPrices.length > 0) {
+                    // If multiple prices, take the highest one (likely the main product, not sale/bundle)
+                    // But also check if there's one close to a common price point
+                    price = Math.max(...validPrices);
+                }
             }
         }
 
@@ -191,15 +227,17 @@ class BestBuyBuyer {
         console.log(`   🔍 Validating Best Buy (via ScraperAPI): ${url}`);
         
         try {
+            const sku = this.extractSKU(url);
             const html = await this.fetchWithScraperAPI(url);
             if (!html) {
                 return { valid: false, reason: 'scraper_api_error' };
             }
 
-            const productData = this.parseProductHTML(html);
+            const productData = this.parseProductHTML(html, sku);
             
+            console.log(`   🎯 Target SKU: ${sku}`);
             console.log(`   📦 Best Buy: ${productData.title?.substring(0, 50) || '(no title)'}...`);
-            console.log(`   💰 Price: $${productData.price || 'NOT FOUND'}`);
+            console.log(`   💰 Price: $${productData.price || 'NOT FOUND'} (BFMR expects: $${bfmrRetailPrice})`);
             console.log(`   📦 In Stock: ${productData.inStock}`);
             console.log(`   🚚 Ships to Home: ${productData.shipsToHome}`);
 
