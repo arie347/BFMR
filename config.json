@@ -1,5 +1,5 @@
 {
-  "polling_interval_minutes": 5,
+  "polling_interval_minutes": 30,
   "retailer_settings": {
     "amazon": {
       "enabled": true,
@@ -19,13 +19,13 @@
     "preferred_retailers": [],
     "excluded_retailers": [],
     "only_open_deals": true,
-    "filter_full_retail": false,
+    "filter_full_retail": true,
     "filter_above_retail": false
   },
   "price_tolerance": {
     "enabled": true,
     "type": "dollar",
-    "value": 100
+    "value": 0
   },
   "sync_orders": {
     "enabled": false,

@@ -466,8 +466,7 @@ class BfmrWeb {
                     '.product-image img',
                     '.deal-image img',
                     'img.main-image',
-                    '.image-container img',
-                    'table img' // Fallback for table images
+                    '.image-container img'
                 ];
 
                 let imageUrl = null;
@@ -476,6 +475,36 @@ class BfmrWeb {
                     if (img && img.src) {
                         imageUrl = img.src;
                         break;
+                    }
+                }
+                
+                // If no image found, look for larger images that aren't retailer logos
+                if (!imageUrl) {
+                    const allImages = Array.from(document.querySelectorAll('img'));
+                    for (const img of allImages) {
+                        const src = img.src || '';
+                        // Skip retailer logos and small icons
+                        if (src.includes('Amazon.png') || 
+                            src.includes('Walmart.png') || 
+                            src.includes('BestBuy.png') ||
+                            src.includes('Target.png') ||
+                            src.includes('logo') ||
+                            src.includes('icon')) {
+                            continue;
+                        }
+                        // Look for actual product images (usually larger or from specific CDNs)
+                        if (src.includes('cloudfront.net') || 
+                            src.includes('m.media-amazon.com') ||
+                            src.includes('pisces.bbystatic.com') ||
+                            img.naturalWidth > 100) {
+                            // Additional check: skip if it's clearly a retailer badge
+                            const alt = (img.alt || '').toLowerCase();
+                            if (!alt.includes('amazon') && !alt.includes('walmart') && 
+                                !alt.includes('bestbuy') && !alt.includes('target')) {
+                                imageUrl = src;
+                                break;
+                            }
+                        }
                     }
                 }
 
@@ -1059,7 +1088,7 @@ class BfmrWeb {
         console.log(`\n🗑️ Unreserving deal ${dealCode} from BFMR tracker...`);
 
         try {
-            await this.ensureBrowser();
+            await this.init();
 
             // Navigate to tracker page
             const trackerUrl = 'https://www.bfmr.com/tracker';
@@ -1149,7 +1178,7 @@ class BfmrWeb {
         console.log(`\n🔍 Verifying reservation for ${dealCode} in tracker...`);
 
         try {
-            await this.ensureBrowser();
+            await this.init();
             console.log('   Browser ready, navigating to tracker...');
 
             // Navigate to tracker with longer timeout

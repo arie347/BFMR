@@ -30,6 +30,10 @@ class Logger {
         fs.appendFileSync(logFile, logMessage);
     }
 
+    error(message) {
+        this.log(message, 'ERROR');
+    }
+
     logDeal(deal, action, result, quantity = 1, imageUrl = null, retailer = 'amazon', retailerUrl = null) {
         const entry = {
             timestamp: new Date().toISOString(),
