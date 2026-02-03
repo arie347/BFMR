@@ -186,6 +186,7 @@ class BestBuyBuyer {
 
         this.browser = await puppeteer.launch({
             headless: 'new', // Use new headless mode (harder to detect)
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
             defaultViewport: { width: 1280, height: 800 },
             args: [
                 '--no-sandbox',

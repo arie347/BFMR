@@ -30,6 +30,7 @@ class AmazonBuyer {
 
         this.browser = await puppeteer.launch({
             headless: headless === false ? false : (process.env.HEADLESS !== 'false'),
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
             defaultViewport: null,
             args: [
                 '--no-sandbox',

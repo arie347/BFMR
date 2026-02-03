@@ -41,6 +41,7 @@ class BfmrWeb {
 
         this.browser = await puppeteer.launch({
             headless: true, // Change to false for debugging
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
