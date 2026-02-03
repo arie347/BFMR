@@ -21,15 +21,13 @@ echo "🌐 Installing Chrome dependencies..."
 sudo apt-get install -y \
     chromium-browser \
     fonts-liberation \
-    libappindicator3-1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
+    libatk-bridge2.0-0t64 \
+    libatk1.0-0t64 \
+    libcups2t64 \
     libdbus-1-3 \
     libdrm2 \
     libgbm1 \
-    libgtk-3-0 \
+    libgtk-3-0t64 \
     libnspr4 \
     libnss3 \
     libx11-xcb1 \
@@ -37,7 +35,7 @@ sudo apt-get install -y \
     libxdamage1 \
     libxrandr2 \
     xdg-utils \
-    wget
+    wget || echo "Some packages may have different names, continuing..."
 
 # Install PM2 globally
 echo "⚙️ Installing PM2..."
