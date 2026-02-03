@@ -15,6 +15,7 @@ data/
 # Screenshots and debug files
 screenshots/
 *.png
+!dashboard/logo.png
 debug-*.js
 test-*.js
 
