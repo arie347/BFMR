@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BFMR Auto-Buyer Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="toggle.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 BFMR Auto-Buyer</h1>
+            <div class="controls">
+                <!-- Scraper Controls -->
+                <div id="scraper-controls" class="control-group">
+                    <div class="toggle-wrapper">
+                        <span class="toggle-label">Auto-Monitor</span>
+                        <label class="switch">
+                            <input type="checkbox" id="autoModeToggle" onchange="toggleAutoMode()">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                    <button class="btn btn-primary" onclick="checkNow()" id="checkNowBtn">Check Now</button>
+                </div>
+
+                <!-- Order Controls (Hidden by default) -->
+                <div id="order-controls" class="control-group" style="display: none;">
+                    <div class="toggle-wrapper">
+                        <span class="toggle-label">Auto-Sync</span>
+                        <label class="switch">
+                            <input type="checkbox" id="sync_orders_enabled"
+                                onchange="//Handled by saveConfig or separate listener">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                    <button class="btn btn-primary" onclick="syncOrdersNow()" id="syncNowBtn">Sync Orders Now</button>
+                    <span id="syncStatus" class="status-badge"
+                        style="display: none; background: transparent; color: #555;"></span>
+                </div>
+
+                <div class="status">
+                    <span class="status-badge" id="status">Idle</span>
+                </div>
+                <!-- Settings Icon -->
+                <button class="btn-icon" onclick="openSettings()" title="Settings"
+                    style="background:none; border:none; font-size: 24px; cursor: pointer;">⚙️</button>
+            </div>
+        </header>
+
+        <!-- Tabs Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('scraper')">🔍 Live Scraper</button>
+            <button class="tab-btn" onclick="switchTab('orders')">📦 Order Manager</button>
+        </div>
+
+        <!-- TAB 1: SCRAPER VIEW -->
+        <div id="scraper-view" class="tab-content active">
+            <div class="grid">
+                <!-- Config removed from here, moving to modal -->
+
+                <!-- Deal History (Scraper Results) -->
+                <section class="card full-width">
+                    <h2>🔍 Recent Scrapes</h2>
+                    <div id="historyList" class="deal-list">
+                        <div class="panel">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <h2>🔍 Recent Scrapes (Success)</h2>
+                                <button onclick="clearHistory('success')" class="btn"
+                                    style="background: #c0392b; color: white;">🗑️ Clear All Success</button>
+                            </div>
+                            <div id="historyList" class="deal-list">
+                                <p class="loading">Loading...</p>
+                            </div>
+                        </div>
+                </section>
+
+                <!-- Missed Deals (Was Price Detection Failed) -->
+                <section class="card full-width">
+                    <div class="panel">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h2>⚠️ Missed Deals (Failures)</h2>
+                            <button onclick="clearHistory('missed')" class="btn"
+                                style="background: #c0392b; color: white;">🗑️ Clear All Missed</button>
+                        </div>
+                        <div id="missedDealsList">
+                            <p class="loading">No missed deals logged</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- TAB 2: ORDER MANAGER VIEW -->
+        <div id="orders-view" class="tab-content">
+            <div class="grid">
+                <!-- Sync settings removed from here, moving to modal -->
+
+                <section class="card full-width">
+                    <h2>📦 Placed Orders</h2>
+                    <div class="table-container">
+                        <table class="orders-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Order ID</th>
+                                    <th>Product</th>
+                                    <th>Status</th>
+                                    <th>Tracking</th>
+                                    <th>BFMR Sync</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ordersTableBody">
+                                <!-- Computed via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="ordersListEmpty" class="loading" style="display:none;">
+                        No orders placed yet.
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- SETTINGS MODAL -->
+        <div id="settingsModal" class="modal">
+            <div class="modal-content">
+                <span class="close" onclick="closeSettings()">&times;</span>
+                <h2 id="settingsTitle">⚙️ Configuration</h2>
+
+                <!-- Scraper Settings Form -->
+                <div id="scraperSettingsForm" class="settings-group">
+                    <div class="config-form">
+                        <h3>Retailers</h3>
+                        <div class="form-group" style="display: flex; align-items: center; gap: 20px;">
+                            <label style="flex: 1;">
+                                <input type="checkbox" id="enable_amazon" />
+                                Enable Amazon
+                            </label>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <label style="font-size: 12px; color: #666;">Max Qty:</label>
+                                <input type="number" id="amazon_max_per_order" min="1" max="10" style="width: 60px;" />
+                            </div>
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: center; gap: 20px;">
+                            <label style="flex: 1;">
+                                <input type="checkbox" id="enable_bestbuy" />
+                                Enable Best Buy
+                            </label>
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                                <label style="font-size: 12px; color: #666;">Max Qty:</label>
+                                <input type="number" id="bestbuy_max_per_order" min="1" max="10" style="width: 60px;" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>ScraperAPI Key <a href="https://www.scraperapi.com/" target="_blank" style="font-size: 11px; color: #3b82f6;">(Free: 5,000 req/mo)</a></label>
+                            <input type="text" id="scraper_api_key" placeholder="Get free key at scraperapi.com" />
+                        </div>
+
+                        <div class="form-group">
+                            <label>Polling Interval (minutes)</label>
+                            <input type="number" id="polling_interval" min="1" max="60" />
+                        </div>
+                        <div class="form-group">
+                            <label>Max Price ($)</label>
+                            <input type="number" id="max_price" min="0" />
+                        </div>
+                        <div class="form-group">
+                            <label>Min Payout ($)</label>
+                            <input type="number" id="min_payout" min="0" />
+                        </div>
+                        <div class="form-group">
+                            <label>Min Profit Margin (%)</label>
+                            <input type="number" id="min_profit_margin_percent" step="0.1" />
+                        </div>
+                        <div class="form-group">
+                            <label>Price Tolerance Type</label>
+                            <select id="price_tolerance_type">
+                                <option value="dollar">Dollar ($)</option>
+                                <option value="percent">Percent (%)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label id="price_tolerance_label">Price Tolerance ($)</label>
+                            <input type="number" id="price_tolerance_value" step="0.01" min="0" />
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="price_tolerance_enabled" />
+                                Enable Price Tolerance
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="only_open_deals" />
+                                Only Open Deals
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="filter_full_retail" />
+                                BFMR Scraping: Full Retail Only
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="filter_above_retail" />
+                                BFMR Scraping: Above Retail Only
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Order Settings Form -->
+                <div id="orderSettingsForm" class="settings-group" style="display:none;">
+                    <div class="config-form">
+                        <div class="form-group">
+                            <label>Sync Interval (minutes)</label>
+                            <input type="number" id="sync_interval" min="5" max="1440" />
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px; text-align: right;">
+                    <button class="btn btn-primary" onclick="saveConfig()">Save Changes</button>
+                    <button class="btn" style="background:#eee; color:#333;" onclick="closeSettings()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+
+
+    </div>
+    </div>
+
+    <!-- Activity Logs (Global) -->
+    <section class="card full-width" style="margin-top: 24px;">
+        <h2>📋 Activity Log</h2>
+        <div id="logsList" class="logs">
+            <p class="loading">Loading...</p>
+        </div>
+    </section>
+    </div>
+    </div>
+
+    <script src="app.js?v=2"></script>
+</body>
+
+</html>

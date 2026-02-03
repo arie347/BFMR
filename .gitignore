@@ -15,10 +15,12 @@ data/
 # Screenshots and debug files
 screenshots/
 *.png
-*.html
 debug-*.js
 test-*.js
-*.txt
+
+# Ignore HTML debug files but not dashboard
+/*.html
+!dashboard/index.html
 
 # OS files
 .DS_Store
