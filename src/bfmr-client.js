@@ -5,9 +5,11 @@ class BfmrClient {
   constructor() {
     this.apiKey = process.env.BFMR_API_KEY;
     this.baseUrl = process.env.BFMR_API_URL || 'https://api.bfmr.com/api/v2';
+    this.initialized = false;
 
     if (!this.apiKey) {
-      throw new Error('BFMR_API_KEY is not set in .env');
+      console.log('ℹ️  BFMR API key not set - using web scraping mode instead');
+      return; // Don't initialize API client, will use web scraping
     }
 
     this.client = axios.create({
@@ -20,9 +22,14 @@ class BfmrClient {
         'User-Agent': 'BFMR-AutoBuyer/1.0'
       }
     });
+    this.initialized = true;
   }
 
   async getDeals() {
+    if (!this.initialized) {
+      return { message: 'api_not_configured', deals: [], paging: { total: 0 } };
+    }
+    
     try {
       let allDeals = [];
       let currentPage = 1;
@@ -69,6 +76,8 @@ class BfmrClient {
   }
 
   async getDealBySlug(slug) {
+    if (!this.initialized) return null;
+    
     try {
       const response = await this.client.get(`/deals/${slug}`);
       return response.data.deal;
@@ -83,6 +92,11 @@ class BfmrClient {
   }
 
   async submitTracking(dealId, trackingNumber, quantity, cost, orderId = null) {
+    if (!this.initialized) {
+      console.log('⚠️  Cannot submit tracking - API not configured');
+      return null;
+    }
+    
     try {
       const payload = {
         tracking_number: trackingNumber,
