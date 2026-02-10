@@ -52,55 +52,33 @@ class AmazonBuyer {
         let page = null;
         try {
             page = await this.browser.newPage();
-            // Use domcontentloaded instead of networkidle2 for faster, more reliable loading
-            // Increase timeout to 60 seconds
-            await page.goto('https://www.amazon.com/gp/your-account/order-history', {
+            // Check homepage instead of order-history (less strict auth requirement)
+            await page.goto('https://www.amazon.com', {
                 waitUntil: 'domcontentloaded',
                 timeout: 60000
             });
 
-            // Check if redirected to login page
-            let url = page.url();
-            if (url.includes('signin') || url.includes('ap/signin')) {
-                console.log('❌ Not logged in! Restarting browser in visible mode for login...');
+            // Wait for page to load
+            await new Promise(r => setTimeout(r, 2000));
 
-                // Close the headless browser
-                await page.close();
-                await this.browser.close();
-                this.browser = null;
+            // Check if logged in by looking for account name in header
+            const isLoggedIn = await page.evaluate(() => {
+                // Look for "Hello, [Name]" or account name in nav
+                const accountText = document.querySelector('#nav-link-accountList-nav-line-1')?.innerText || '';
+                // If it says "Hello, Sign in" or similar, not logged in
+                // If it says "Hello, [Name]", logged in
+                return !accountText.toLowerCase().includes('sign in') && accountText.toLowerCase().includes('hello');
+            });
 
-                // Restart in non-headless mode
-                await this.init(false); // headless = false
-
-                // Open login page in visible browser
-                page = await this.browser.newPage();
-                await page.goto('https://www.amazon.com/ap/signin', {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 60000
-                });
-
-                console.log('🔓 Browser opened for login. Please log in to Amazon...');
-
-                // Wait for user to log in (check URL every second)
-                // Timeout after 5 minutes
-                const startTime = Date.now();
-                while (Date.now() - startTime < 300000) {
-                    if (page.isClosed()) return false; // User closed window
-
-                    url = page.url();
-                    if (!url.includes('signin') && !url.includes('ap/signin')) {
-                        console.log('✅ Detected login! Proceeding...');
-                        return true;
-                    }
-                    await new Promise(r => setTimeout(r, 1000));
-                }
-
-                console.log('⏰ Login timed out.');
-                return false;
+            if (isLoggedIn) {
+                console.log('✅ Logged in to Amazon (headless mode)');
+                return true;
             }
 
-            console.log('✅ Logged in to Amazon (headless mode)');
-            return true;
+            // Not logged in - just report it, don't try to open visible browser on server
+            console.log('❌ Not logged in to Amazon. Please log in via VNC.');
+            console.log('   Run: google-chrome-stable --no-sandbox --user-data-dir=/root/BFMR/user_data_new https://www.amazon.com');
+            return false;
         } catch (error) {
             console.error('Error checking login status:', error);
             return false;
