@@ -61,39 +61,21 @@ class AmazonBuyer {
             // Wait for page to load
             await new Promise(r => setTimeout(r, 2000));
 
-            // Check if logged in by looking for account name in header
+            // Check if logged in by looking for personalized content
             const isLoggedIn = await page.evaluate(() => {
-                // Try multiple selectors for regular Amazon and Amazon Business
-                const selectors = [
-                    '#nav-link-accountList-nav-line-1',  // Regular Amazon
-                    '#nav-link-accountList',             // Alternative
-                    '[data-nav-role="signin"]',          // Sign in link
-                    '.nav-line-1',                       // Generic nav line
-                    '#nav-logobar-greeting',             // Amazon Business greeting
-                    '.nav-bb-right'                      // Amazon Business right nav
-                ];
+                const bodyText = document.body.innerText.toLowerCase();
                 
-                let foundText = '';
-                for (const sel of selectors) {
-                    const el = document.querySelector(sel);
-                    if (el && el.innerText) {
-                        foundText += ' ' + el.innerText;
-                    }
-                }
+                // Signs of being logged in:
+                // - "Deliver to [Name]" in header
+                // - "Hello, [Name]" anywhere
+                // - NOT having "Sign in" as a prompt
                 
-                // Also check the whole nav area
-                const navArea = document.querySelector('#navbar, #nav-belt, .nav-right');
-                if (navArea) {
-                    foundText += ' ' + navArea.innerText;
-                }
+                const hasDeliverTo = bodyText.includes('deliver to') && !bodyText.includes('deliver to select');
+                const hasHello = bodyText.includes('hello,') || bodyText.includes('hello ');
+                const hasSignInPrompt = bodyText.includes('sign in') && bodyText.includes('account');
                 
-                const text = foundText.toLowerCase();
-                // Logged in if we see "Hello, [Name]" and NOT "sign in"
-                const hasHello = text.includes('hello');
-                const hasSignIn = text.includes('sign in') || text.includes('sign-in');
-                
-                // If has Hello and no Sign In prompt, we're logged in
-                return hasHello && !hasSignIn;
+                // If we see personalized "Deliver to" or "Hello", we're logged in
+                return hasDeliverTo || (hasHello && !hasSignInPrompt);
             });
 
             if (isLoggedIn) {
