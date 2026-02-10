@@ -63,11 +63,37 @@ class AmazonBuyer {
 
             // Check if logged in by looking for account name in header
             const isLoggedIn = await page.evaluate(() => {
-                // Look for "Hello, [Name]" or account name in nav
-                const accountText = document.querySelector('#nav-link-accountList-nav-line-1')?.innerText || '';
-                // If it says "Hello, Sign in" or similar, not logged in
-                // If it says "Hello, [Name]", logged in
-                return !accountText.toLowerCase().includes('sign in') && accountText.toLowerCase().includes('hello');
+                // Try multiple selectors for regular Amazon and Amazon Business
+                const selectors = [
+                    '#nav-link-accountList-nav-line-1',  // Regular Amazon
+                    '#nav-link-accountList',             // Alternative
+                    '[data-nav-role="signin"]',          // Sign in link
+                    '.nav-line-1',                       // Generic nav line
+                    '#nav-logobar-greeting',             // Amazon Business greeting
+                    '.nav-bb-right'                      // Amazon Business right nav
+                ];
+                
+                let foundText = '';
+                for (const sel of selectors) {
+                    const el = document.querySelector(sel);
+                    if (el && el.innerText) {
+                        foundText += ' ' + el.innerText;
+                    }
+                }
+                
+                // Also check the whole nav area
+                const navArea = document.querySelector('#navbar, #nav-belt, .nav-right');
+                if (navArea) {
+                    foundText += ' ' + navArea.innerText;
+                }
+                
+                const text = foundText.toLowerCase();
+                // Logged in if we see "Hello, [Name]" and NOT "sign in"
+                const hasHello = text.includes('hello');
+                const hasSignIn = text.includes('sign in') || text.includes('sign-in');
+                
+                // If has Hello and no Sign In prompt, we're logged in
+                return hasHello && !hasSignIn;
             });
 
             if (isLoggedIn) {
