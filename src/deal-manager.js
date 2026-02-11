@@ -64,6 +64,36 @@ class DealManager {
         this.processingDeals.delete(dealId);
     }
 
+    // Check if deal was already processed (in recent scrapes)
+    isAlreadyProcessed(dealId) {
+        return this.processedDeals.has(dealId);
+    }
+
+    // Check if deal was already ordered
+    isAlreadyOrdered(dealCode) {
+        return OrderManager.hasDeal(dealCode);
+    }
+
+    // Get deal status for dashboard display
+    getDealStatus(deal) {
+        if (OrderManager.hasDeal(deal.deal_code)) {
+            return 'already_ordered';
+        }
+        if (this.processedDeals.has(deal.deal_id)) {
+            return 'already_processed';
+        }
+        if (this.processingDeals.has(deal.deal_id)) {
+            return 'processing';
+        }
+        return 'new';
+    }
+
+    // Clear a deal from processedDeals (allow reprocessing)
+    clearProcessed(dealId) {
+        this.processedDeals.delete(dealId);
+        logger.log(`Cleared deal ${dealId} from processed list - will be reprocessed on next check`);
+    }
+
     async fetchAndFilterDeals() {
         console.log('DEBUG: fetchAndFilterDeals called');
         logger.log('fetchAndFilterDeals called');
@@ -171,9 +201,10 @@ class DealManager {
                     continue;
                 }
                 
-                // NOTE: We no longer skip based on processedDeals
-                // Instead, we always try to reserve on BFMR - it will tell us if limit reached
-                // This allows catching restocks when more quantity becomes available
+                // Skip if already processed (in recent scrapes with successful action)
+                if (this.processedDeals.has(deal.deal_id)) {
+                    continue;
+                }
 
                 if (this.isDealActionable(deal)) {
                     actionableDeals.push(deal);
@@ -193,13 +224,8 @@ class DealManager {
         // Handle both nested filters object (from config.json) and flat config (fallback)
         const filters = this.config.filters || this.config;
 
-        // NOTE: We no longer skip based on processedDeals
-        // We always try to reserve on BFMR - it will tell us if limit reached
-        // This allows catching restocks when more quantity becomes available
-
         // Skip if deal has already been ordered (Order Manager)
         if (OrderManager.hasDeal(deal.deal_code)) {
-            // logger.log(`Skipping deal ${deal.deal_code} (Already Ordered)`); // Optional generic logging
             return false;
         }
 
