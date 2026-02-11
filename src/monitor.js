@@ -230,11 +230,18 @@ class Monitor {
             
             if (validation.valid) {
                 logger.log(`   ✅ Amazon: Valid (price $${validation.amazonPrice || deal.retail_price})`);
+                
+                // Store image from Amazon if we got one
+                if (validation.imageUrl && !deal.imageUrl) {
+                    deal.imageUrl = validation.imageUrl;
+                }
+                
                 validRetailers.push({
                     name: 'amazon',
                     link: amazonLink,
                     maxQty: amazonMaxQty,
-                    validation
+                    validation,
+                    imageUrl: validation.imageUrl
                 });
                 totalBuyable += amazonMaxQty;
             } else {

@@ -277,8 +277,29 @@ class AmazonBuyer {
                 return { valid: false, reason: 'out_of_stock' };
             }
 
+            // 4. Extract product image while we're here
+            const imageUrl = await page.evaluate(() => {
+                // Try main product image selectors
+                const imgSelectors = [
+                    '#landingImage',
+                    '#imgBlkFront',
+                    '#main-image',
+                    '.a-dynamic-image',
+                    '#imgTagWrapperId img',
+                    '.imgTagWrapper img'
+                ];
+                
+                for (const selector of imgSelectors) {
+                    const img = document.querySelector(selector);
+                    if (img && img.src && !img.src.includes('sprite') && !img.src.includes('icon')) {
+                        return img.src;
+                    }
+                }
+                return null;
+            });
+
             console.log('   ✅ Validation passed!');
-            return { valid: true, amazonPrice };
+            return { valid: true, amazonPrice, imageUrl };
 
         } catch (error) {
             const errorType = error.message.includes('timeout') ? 'TIMEOUT' : 
