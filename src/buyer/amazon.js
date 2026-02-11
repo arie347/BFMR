@@ -172,8 +172,8 @@ class AmazonBuyer {
             page = await this.browser.newPage();
             await page.setViewport({ width: 1280, height: 800 });
 
-            console.log(`🔍 Validating product at ${url}...`);
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+            console.log(`🔍 Validating Amazon: ${url}`);
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
             // Wait longer for dynamic content (price) to load
             await new Promise(r => setTimeout(r, 5000));
 
@@ -251,10 +251,21 @@ class AmazonBuyer {
             return { valid: true, amazonPrice };
 
         } catch (error) {
-            console.error('   ❌ Validation error:', error.message);
-            return { valid: false, reason: 'error', error: error.message };
+            const errorType = error.message.includes('timeout') ? 'TIMEOUT' : 
+                              error.message.includes('Target closed') ? 'BROWSER_CRASH' :
+                              error.message.includes('net::') ? 'NETWORK' : 'UNKNOWN';
+            console.error(`   ❌ Amazon validation FAILED [${errorType}]`);
+            console.error(`      URL: ${url}`);
+            console.error(`      Error: ${error.message}`);
+            return { valid: false, reason: 'error', error: error.message, errorType };
         } finally {
-            if (page) await page.close();
+            if (page) {
+                try {
+                    await page.close();
+                } catch (e) {
+                    console.error('      Failed to close page:', e.message);
+                }
+            }
         }
     }
 
