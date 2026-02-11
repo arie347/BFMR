@@ -155,13 +155,37 @@ class AmazonBuyer {
     }
 
     /**
-     * Validate Amazon product without adding to cart
-     * Checks: price, stock availability, and used/renewed status
+     * Validate Amazon product with automatic retry on timeout
      * @param {string} url - Amazon product URL
      * @param {number} bfmrRetailPrice - Expected retail price from BFMR
+     * @param {number} maxRetries - Number of retries on timeout (default: 2)
      * @returns {Promise<{valid: boolean, reason?: string, amazonPrice?: number}>}
      */
-    async validateProduct(url, bfmrRetailPrice) {
+    async validateProduct(url, bfmrRetailPrice, maxRetries = 2) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            const result = await this._validateProductOnce(url, bfmrRetailPrice);
+            
+            // If success or non-timeout error, return immediately
+            if (result.valid || (result.errorType && result.errorType !== 'TIMEOUT')) {
+                return result;
+            }
+            
+            // On timeout, retry
+            if (attempt < maxRetries) {
+                console.log(`   🔄 Retry ${attempt}/${maxRetries - 1} after timeout...`);
+                // Brief pause before retry
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+        
+        // All retries exhausted
+        return { valid: false, reason: 'error', error: 'All retry attempts timed out', errorType: 'TIMEOUT' };
+    }
+
+    /**
+     * Single validation attempt (internal)
+     */
+    async _validateProductOnce(url, bfmrRetailPrice) {
         if (!this.browser || !this.browser.isConnected()) {
             this.browser = null;
             await this.init();
