@@ -238,7 +238,8 @@ class Monitor {
                 });
                 totalBuyable += amazonMaxQty;
             } else {
-                logger.log(`   ❌ Amazon: ${validation.reason}`);
+                const detail = validation.errorType ? `${validation.reason} [${validation.errorType}]` : validation.reason;
+                logger.log(`   ❌ Amazon: ${detail}`);
             }
         }
 

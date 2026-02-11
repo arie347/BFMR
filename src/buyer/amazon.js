@@ -165,15 +165,21 @@ class AmazonBuyer {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             const result = await this._validateProductOnce(url, bfmrRetailPrice);
             
-            // If success or non-timeout error, return immediately
-            if (result.valid || (result.errorType && result.errorType !== 'TIMEOUT')) {
+            // Return immediately if:
+            // - Valid (success)
+            // - Specific failure reason (price_mismatch, out_of_stock, etc.) - don't retry these
+            // - Non-timeout error
+            const shouldNotRetry = result.valid || 
+                (result.reason && result.reason !== 'error') ||
+                (result.errorType && result.errorType !== 'TIMEOUT');
+            
+            if (shouldNotRetry) {
                 return result;
             }
             
-            // On timeout, retry
+            // Only retry on timeout errors
             if (attempt < maxRetries) {
                 console.log(`   🔄 Retry ${attempt}/${maxRetries - 1} after timeout...`);
-                // Brief pause before retry
                 await new Promise(r => setTimeout(r, 2000));
             }
         }
