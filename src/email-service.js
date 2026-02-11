@@ -33,7 +33,7 @@ class EmailService {
 
     getSenderEmail() {
         // Resend requires a verified domain or use onboarding@resend.dev for testing
-        return this.config.email?.sender || process.env.SENDER_EMAIL || 'BFMR Bot <onboarding@resend.dev>';
+        return this.config.email?.sender || process.env.SENDER_EMAIL || 'BFMR Deals <onboarding@resend.dev>';
     }
 
     async sendDealNotification(deal, action, retailer, quantity, retailerUrl) {
@@ -140,7 +140,7 @@ class EmailService {
 
         <!-- Footer -->
         <div style="text-align: center; color: #999; font-size: 12px; border-top: 1px solid #eee; padding-top: 16px;">
-            <p style="margin: 0;">BFMR Auto-Buyer Bot</p>
+            <p style="margin: 0;">BFMR Deal Alerts</p>
             <p style="margin: 4px 0 0 0;">
                 <a href="https://bfmr.com/deals/${deal.deal_code}" style="color: #3498db;">View on BFMR</a>
             </p>
@@ -181,14 +181,14 @@ class EmailService {
             const { data, error: sendError } = await this.resend.emails.send({
                 from: this.getSenderEmail(),
                 to: recipientEmail,
-                subject: `⚠️ BFMR Bot Error: ${dealCode}`,
+                subject: `⚠️ Deal Alert: Issue with ${dealCode}`,
                 html: `
                     <div style="font-family: sans-serif; padding: 20px;">
                         <h2>⚠️ Deal Processing Error</h2>
                         <p><strong>Deal Code:</strong> ${dealCode}</p>
                         <p><strong>Retailer:</strong> ${retailer}</p>
                         <p><strong>Error:</strong> ${error}</p>
-                        <p style="color: #999; font-size: 12px;">BFMR Auto-Buyer Bot</p>
+                        <p style="color: #999; font-size: 12px;">BFMR Deal Alerts</p>
                     </div>
                 `
             });
@@ -353,7 +353,7 @@ class EmailService {
 
         <!-- Footer -->
         <div style="text-align: center; color: #999; font-size: 12px; border-top: 1px solid #eee; padding-top: 16px; margin-top: 24px;">
-            <p style="margin: 0;">BFMR Auto-Buyer Bot</p>
+            <p style="margin: 0;">BFMR Deal Alerts</p>
         </div>
     </div>
 </body>
@@ -395,17 +395,17 @@ class EmailService {
             const { data, error } = await this.resend.emails.send({
                 from: this.getSenderEmail(),
                 to: recipientEmail,
-                subject: '✅ BFMR Bot Email Test',
+                subject: '✅ BFMR Deal Alerts - Test Email',
                 html: `
                     <div style="font-family: sans-serif; padding: 20px; text-align: center;">
                         <h1>✅ Email Configuration Working!</h1>
-                        <p>Your BFMR Auto-Buyer bot is set up to send notifications.</p>
+                        <p>Your BFMR deal alerts are set up and ready to send notifications.</p>
                         <p>You'll receive emails when:</p>
                         <ul style="text-align: left; display: inline-block;">
                             <li>Items are added to your Amazon cart</li>
                             <li>Best Buy items are ready for manual cart add</li>
                         </ul>
-                        <p style="color: #999; font-size: 12px; margin-top: 20px;">BFMR Auto-Buyer Bot</p>
+                        <p style="color: #999; font-size: 12px; margin-top: 20px;">BFMR Deal Alerts</p>
                     </div>
                 `
             });
