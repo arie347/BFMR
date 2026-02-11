@@ -19,7 +19,15 @@ class Logger {
     }
 
     log(message, level = 'INFO') {
-        const timestamp = new Date().toISOString();
+        const now = new Date();
+        const timestamp = now.toLocaleString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            hour: 'numeric', 
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true 
+        });
         const logMessage = `[${timestamp}] [${level}] ${message}\n`;
 
         // Console output
