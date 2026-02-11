@@ -304,6 +304,15 @@ class Monitor {
 
         await this.bfmrWeb.login(bfmrEmail, bfmrPassword);
         
+        // Scrape BFMR page for imageUrl if we don't have it yet (e.g., Amazon-only deals)
+        if (!deal.imageUrl) {
+            const bfmrData = await this.bfmrWeb.scrapeDealPage(deal.deal_code);
+            if (bfmrData.imageUrl) {
+                deal.imageUrl = bfmrData.imageUrl;
+                logger.log(`   🖼️ Got product image from BFMR`);
+            }
+        }
+        
         logger.log(`   📝 Reserving up to ${totalBuyable} units on BFMR...`);
         const reserveResult = await this.bfmrWeb.reserveIncrementally(deal.deal_code, 2, totalBuyable);
         
