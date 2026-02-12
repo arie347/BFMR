@@ -921,67 +921,102 @@ class BfmrWeb {
                 console.log(`⚠️ Timeout or error loading dynamic content: ${e.message}`);
             }
 
-            // Scroll multiple times to trigger lazy loading
-            console.log('DEBUG: Scrolling to load more deals...');
-            let previousHeight = 0;
-            let scrollAttempts = 0;
-            const maxScrollAttempts = 10;
+            // Collect slugs from multiple pages
+            let allSlugs = [];
+            let currentPage = 1;
+            const maxPages = 10;
             
-            while (scrollAttempts < maxScrollAttempts) {
-                scrollAttempts++;
+            while (currentPage <= maxPages) {
+                console.log(`DEBUG: Scraping page ${currentPage}...`);
                 
-                // Scroll to bottom
-                await page.evaluate(async () => {
-                    window.scrollTo(0, document.body.scrollHeight);
+                // Extract slugs from current page
+                const pageSlugs = await page.evaluate(() => {
+                    const links = Array.from(document.querySelectorAll('a[href*="/deals/"]'));
+                    const domSlugs = links.map(link => {
+                        const href = link.getAttribute('href');
+                        const match = href.match(/\/deals\/([^\/]+)/);
+                        return match ? match[1] : null;
+                    });
+
+                    const html = document.body.innerHTML;
+                    const regex = /href=["']\/deals\/([a-zA-Z0-9-]+)["']/g;
+                    let match;
+                    const regexSlugs = [];
+                    while ((match = regex.exec(html)) !== null) {
+                        regexSlugs.push(match[1]);
+                    }
+
+                    return [...domSlugs, ...regexSlugs]
+                        .filter(slug => slug && slug !== 'create' && slug !== 'dashboard')
+                        .filter((v, i, a) => a.indexOf(v) === i);
                 });
-                await new Promise(r => setTimeout(r, 1500)); // Wait for content to load
                 
-                // Check if page height changed (new content loaded)
-                const currentHeight = await page.evaluate(() => document.body.scrollHeight);
+                console.log(`DEBUG: Found ${pageSlugs.length} slugs on page ${currentPage}`);
+                allSlugs = [...allSlugs, ...pageSlugs];
                 
-                if (currentHeight === previousHeight) {
-                    console.log(`DEBUG: No new content after scroll ${scrollAttempts}, stopping`);
+                // Try to find and click "Next" or pagination button
+                const hasNextPage = await page.evaluate(() => {
+                    // Look for Next button or arrow
+                    const nextSelectors = [
+                        'a[aria-label="Next"]',
+                        'button[aria-label="Next"]',
+                        'a:contains("Next")',
+                        '.pagination-next',
+                        '.next-page',
+                        'a[rel="next"]'
+                    ];
+                    
+                    // Try common selectors first
+                    for (const selector of nextSelectors) {
+                        try {
+                            const btn = document.querySelector(selector);
+                            if (btn && !btn.disabled) {
+                                btn.click();
+                                return true;
+                            }
+                        } catch (e) {}
+                    }
+                    
+                    // Try finding by text content
+                    const allElements = Array.from(document.querySelectorAll('a, button, span'));
+                    const nextBtn = allElements.find(el => {
+                        const text = el.innerText?.trim().toLowerCase();
+                        return (text === 'next' || text === '>' || text === '→' || text === '»') && 
+                               el.offsetParent !== null && !el.disabled;
+                    });
+                    
+                    if (nextBtn) {
+                        nextBtn.click();
+                        return true;
+                    }
+                    
+                    // Try clicking next page number
+                    const pageNumbers = Array.from(document.querySelectorAll('.pagination a, .pager a, nav a'));
+                    const currentActive = pageNumbers.find(p => p.classList.contains('active') || p.getAttribute('aria-current'));
+                    if (currentActive) {
+                        const nextSibling = currentActive.nextElementSibling;
+                        if (nextSibling && nextSibling.tagName === 'A') {
+                            nextSibling.click();
+                            return true;
+                        }
+                    }
+                    
+                    return false;
+                });
+                
+                if (!hasNextPage) {
+                    console.log(`DEBUG: No more pages after page ${currentPage}`);
                     break;
                 }
                 
-                previousHeight = currentHeight;
-                console.log(`DEBUG: Scroll ${scrollAttempts}/${maxScrollAttempts} - page height: ${currentHeight}`);
-                
-                // Also try clicking "Load More" button if it exists
-                await page.evaluate(() => {
-                    const loadMoreBtn = Array.from(document.querySelectorAll('button, a, div'))
-                        .find(el => el.innerText && el.innerText.toLowerCase().includes('load more'));
-                    if (loadMoreBtn) loadMoreBtn.click();
-                });
+                currentPage++;
+                await new Promise(r => setTimeout(r, 2000)); // Wait for page to load
+                await page.waitForSelector('a[href*="/deals/"]', { timeout: 10000 }).catch(() => {});
             }
             
-            await new Promise(r => setTimeout(r, 1000)); // Final settling time
-
-            // Extract deal slugs using DOM + Regex Fallback
-            const slugs = await page.evaluate(() => {
-                // Method 1: DOM Query
-                const links = Array.from(document.querySelectorAll('a[href*="/deals/"]'));
-                const domSlugs = links.map(link => {
-                    const href = link.getAttribute('href');
-                    const match = href.match(/\/deals\/([^\/]+)/);
-                    return match ? match[1] : null;
-                });
-
-                // Method 2: Regex on full HTML (catch-all)
-                const html = document.body.innerHTML;
-                const regex = /href=["']\/deals\/([a-zA-Z0-9-]+)["']/g;
-                let match;
-                const regexSlugs = [];
-                while ((match = regex.exec(html)) !== null) {
-                    regexSlugs.push(match[1]);
-                }
-
-                return [...domSlugs, ...regexSlugs]
-                    .filter(slug => slug && slug !== 'create' && slug !== 'dashboard') // Filter noise
-                    .filter((v, i, a) => a.indexOf(v) === i); // Unique
-            });
-
-            console.log(`✅ Scraped ${slugs.length} unique deal slugs from website`);
+            // Deduplicate
+            const slugs = [...new Set(allSlugs)];
+            console.log(`✅ Scraped ${slugs.length} unique deal slugs from ${currentPage} page(s)`);
             return slugs;
 
         } catch (error) {
