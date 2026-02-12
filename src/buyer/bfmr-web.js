@@ -921,23 +921,41 @@ class BfmrWeb {
                 console.log(`⚠️ Timeout or error loading dynamic content: ${e.message}`);
             }
 
-            // Scroll to bottom to trigger lazy loading
-            await page.evaluate(async () => {
-                await new Promise((resolve) => {
-                    let totalHeight = 0;
-                    const distance = 100;
-                    const timer = setInterval(() => {
-                        const scrollHeight = document.body.scrollHeight;
-                        window.scrollBy(0, distance);
-                        totalHeight += distance;
-                        if (totalHeight >= scrollHeight) {
-                            clearInterval(timer);
-                            resolve();
-                        }
-                    }, 100);
+            // Scroll multiple times to trigger lazy loading
+            console.log('DEBUG: Scrolling to load more deals...');
+            let previousHeight = 0;
+            let scrollAttempts = 0;
+            const maxScrollAttempts = 10;
+            
+            while (scrollAttempts < maxScrollAttempts) {
+                scrollAttempts++;
+                
+                // Scroll to bottom
+                await page.evaluate(async () => {
+                    window.scrollTo(0, document.body.scrollHeight);
                 });
-            });
-            await new Promise(r => setTimeout(r, 1000)); // Settling time
+                await new Promise(r => setTimeout(r, 1500)); // Wait for content to load
+                
+                // Check if page height changed (new content loaded)
+                const currentHeight = await page.evaluate(() => document.body.scrollHeight);
+                
+                if (currentHeight === previousHeight) {
+                    console.log(`DEBUG: No new content after scroll ${scrollAttempts}, stopping`);
+                    break;
+                }
+                
+                previousHeight = currentHeight;
+                console.log(`DEBUG: Scroll ${scrollAttempts}/${maxScrollAttempts} - page height: ${currentHeight}`);
+                
+                // Also try clicking "Load More" button if it exists
+                await page.evaluate(() => {
+                    const loadMoreBtn = Array.from(document.querySelectorAll('button, a, div'))
+                        .find(el => el.innerText && el.innerText.toLowerCase().includes('load more'));
+                    if (loadMoreBtn) loadMoreBtn.click();
+                });
+            }
+            
+            await new Promise(r => setTimeout(r, 1000)); // Final settling time
 
             // Extract deal slugs using DOM + Regex Fallback
             const slugs = await page.evaluate(() => {
