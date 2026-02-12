@@ -128,38 +128,35 @@ class DealManager {
                                     if (deal) {
                                         logger.log(`   + Found hidden deal: ${deal.title} (${deal.deal_code})`);
 
-                                        // Check if deal has Amazon link (both structures)
-                                        let hasAmazon = false;
-
-                                        // Structure 1: deal.items[0].retailer_links[]
+                                        // Check if deal has Amazon link from API
+                                        let hasAmazonInApi = false;
+                                        
                                         if (deal.items && deal.items[0] && deal.items[0].retailer_links) {
-                                            hasAmazon = deal.items[0].retailer_links.some(l =>
+                                            hasAmazonInApi = deal.items[0].retailer_links.some(l =>
                                                 l.retailer && l.retailer.toLowerCase().includes('amazon')
                                             );
-                                            // FIX: If API doesn't have Amazon link, try scraping it
-                                            // The API response for getDealBySlug might not always include amazon_link directly,
-                                            // or it might be nested. We'll check for deal.amazon_link first, then try scraping.
-                                            if (!deal.amazon_link && this.bfmrWeb) {
-                                                logger.log(`   ⚠️ No Amazon link in API for hidden deal - Scraping deal page to find it...`);
-                                                try {
-                                                    const scrapedData = await this.bfmrWeb.scrapeDealPage(deal.deal_code);
-                                                    if (scrapedData.amazonLink) {
-                                                        deal.amazon_link = scrapedData.amazonLink;
-                                                        logger.log(`   ✅ Found Amazon link via scraping: ${deal.amazon_link}`);
-                                                    }
-                                                    // Also reuse limit/image if scraped
-                                                    if (scrapedData.limit) deal.limit_per_household = scrapedData.limit;
-                                                    if (scrapedData.imageUrl) deal.image_url = scrapedData.imageUrl;
-
-                                                } catch (scrapeErr) {
-                                                    logger.log(`   ❌ Failed to scrape hidden deal page: ${scrapeErr.message}`, 'WARN');
+                                        }
+                                        
+                                        // Always try to scrape if no Amazon link found in API
+                                        if (!hasAmazonInApi && !deal.amazon_link && this.bfmrWeb) {
+                                            logger.log(`   ⚠️ No Amazon link in API for hidden deal - Scraping deal page to find it...`);
+                                            try {
+                                                const scrapedData = await this.bfmrWeb.scrapeDealPage(deal.deal_code);
+                                                if (scrapedData.amazonLink) {
+                                                    deal.amazon_link = scrapedData.amazonLink;
+                                                    logger.log(`   ✅ Found Amazon link via scraping: ${deal.amazon_link}`);
                                                 }
+                                                // Also reuse limit/image if scraped
+                                                if (scrapedData.limit) deal.limit_per_household = scrapedData.limit;
+                                                if (scrapedData.imageUrl) deal.image_url = scrapedData.imageUrl;
+
+                                            } catch (scrapeErr) {
+                                                logger.log(`   ❌ Failed to scrape hidden deal page: ${scrapeErr.message}`, 'WARN');
                                             }
                                         }
 
                                         // Now, check if the deal is valid after potential scraping
-                                        // This replaces the previous `hasAmazon` check and `continue`
-                                        if (this.isDealActionable(deal)) { // Re-using isDealActionable for comprehensive check
+                                        if (this.isDealActionable(deal)) {
                                             apiDeals.push(deal);
                                             logger.log(`   ✅ Added hidden deal to the list!`);
                                         } else {
