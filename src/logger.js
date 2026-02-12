@@ -21,6 +21,7 @@ class Logger {
     log(message, level = 'INFO') {
         const now = new Date();
         const timestamp = now.toLocaleString('en-US', { 
+            timeZone: 'America/New_York',
             month: 'short', 
             day: 'numeric', 
             hour: 'numeric', 
