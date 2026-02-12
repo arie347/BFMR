@@ -161,11 +161,12 @@ class DealManager {
                                         }
 
                                         // Now, check if the deal is valid after potential scraping
-                                        if (this.isDealActionable(deal)) {
+                                        const actionableResult = this.isDealActionableWithReason(deal);
+                                        if (actionableResult.actionable) {
                                             apiDeals.push(deal);
                                             logger.log(`   ✅ Added hidden deal to the list!`);
                                         } else {
-                                            logger.log(`   ⚠️ Hidden deal invalid or missing details (e.g. Amazon link) - skipping`);
+                                            logger.log(`   ⚠️ Hidden deal skipped: ${actionableResult.reason}`);
                                         }
                                     }
                                 } catch (error) {
@@ -220,6 +221,79 @@ class DealManager {
             console.error('Error fetching deals:', error);
             return [];
         }
+    }
+
+    isDealActionableWithReason(deal) {
+        const result = { actionable: false, reason: 'unknown' };
+        
+        // Handle both nested filters object (from config.json) and flat config (fallback)
+        const filters = this.config.filters || this.config;
+
+        // Skip if deal has already been ordered (Order Manager)
+        if (OrderManager.hasDeal(deal.deal_code)) {
+            result.reason = 'already_ordered';
+            return result;
+        }
+
+        // 1. Check Profit Margin (Percentage)
+        const profit = deal.payout_price - deal.retail_price;
+        const marginPercent = (profit / deal.retail_price) * 100;
+
+        if (marginPercent < filters.min_profit_margin_percent) {
+            result.reason = `profit_margin_too_low (${marginPercent.toFixed(1)}% < ${filters.min_profit_margin_percent}%)`;
+            return result;
+        }
+
+        // 2. Check Minimum Payout
+        if (deal.payout_price < filters.min_payout) {
+            result.reason = `payout_too_low ($${deal.payout_price} < $${filters.min_payout})`;
+            return result;
+        }
+
+        // 3. Check Retailer Availability
+        const amazonEnabled = this.config.retailer_settings?.amazon?.enabled !== false;
+        const bestbuyEnabled = this.config.retailer_settings?.bestbuy?.enabled === true;
+        
+        let hasActionableRetailer = false;
+
+        if (deal.items && deal.items[0] && deal.items[0].retailer_links) {
+            hasActionableRetailer = deal.items[0].retailer_links.some(l => {
+                const r = l.retailer ? l.retailer.toLowerCase() : '';
+                if (r.includes('amazon') && amazonEnabled) return true;
+                if (r.includes('best buy') && bestbuyEnabled) return true;
+                return false;
+            });
+        }
+
+        if (!hasActionableRetailer && deal.items && deal.items.items && Array.isArray(deal.items.items)) {
+            hasActionableRetailer = deal.items.items.some(item => {
+                const r = item.retailer ? item.retailer.toLowerCase() : '';
+                if (r.includes('amazon') && amazonEnabled) return true;
+                if (r.includes('best buy') && bestbuyEnabled) return true;
+                return false;
+            });
+        }
+        
+        // Check scraped/direct links (for hidden deals)
+        if (!hasActionableRetailer) {
+            if (amazonEnabled && deal.amazon_link) hasActionableRetailer = true;
+            if (bestbuyEnabled && deal.bestbuy_link) hasActionableRetailer = true;
+        }
+
+        if (!hasActionableRetailer) {
+            result.reason = `no_actionable_retailer (amazon_link: ${!!deal.amazon_link}, bestbuy_link: ${!!deal.bestbuy_link}, amazonEnabled: ${amazonEnabled}, bestbuyEnabled: ${bestbuyEnabled})`;
+            return result;
+        }
+
+        // 4. Check Open Status
+        if (filters.only_open_deals && deal.is_reservation_closed) {
+            result.reason = 'reservation_closed';
+            return result;
+        }
+
+        result.actionable = true;
+        result.reason = 'ok';
+        return result;
     }
 
     isDealActionable(deal) {
