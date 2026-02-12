@@ -146,6 +146,11 @@ class DealManager {
                                                     deal.amazon_link = scrapedData.amazonLink;
                                                     logger.log(`   ✅ Found Amazon link via scraping: ${deal.amazon_link}`);
                                                 }
+                                                // Store Best Buy link if found
+                                                if (scrapedData.bestbuyUrl) {
+                                                    deal.bestbuy_link = scrapedData.bestbuyUrl;
+                                                    logger.log(`   ✅ Found Best Buy link via scraping: ${deal.bestbuy_link}`);
+                                                }
                                                 // Also reuse limit/image if scraped
                                                 if (scrapedData.limit) deal.limit_per_household = scrapedData.limit;
                                                 if (scrapedData.imageUrl) deal.image_url = scrapedData.imageUrl;
@@ -266,6 +271,16 @@ class DealManager {
                 if (r.includes('best buy') && bestbuyEnabled) return true;
                 return false;
             });
+        }
+        
+        // Check scraped/direct links (for hidden deals)
+        if (!hasActionableRetailer) {
+            if (amazonEnabled && deal.amazon_link) {
+                hasActionableRetailer = true;
+            }
+            if (bestbuyEnabled && deal.bestbuy_link) {
+                hasActionableRetailer = true;
+            }
         }
 
         if (!hasActionableRetailer) {
