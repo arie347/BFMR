@@ -1101,8 +1101,8 @@ class BfmrWeb {
             const verification = await this.verifyReservation(dealCode);
 
             if (!verification.found && !verification.verificationSkipped) {
-                console.log(`\n⚠️ WARNING: Claimed ${totalReserved} units but NONE found in tracker!`);
-                console.log(`   Verification failed, but trusting initial success signal.`);
+                console.log(`\n❌ CRITICAL: Claimed ${totalReserved} units but NONE found in tracker!`);
+                console.log(`   Reservation likely FAILED - will NOT add to cart`);
                 // DEBUG: Take screenshot of tracker
                 try {
                     const debugPath = path.join(__dirname, '../../screenshots', `tracker_fail_${dealCode}_${Date.now()}.png`);
@@ -1110,16 +1110,23 @@ class BfmrWeb {
                     console.log(`   📸 Saved tracker debug screenshot: ${debugPath}`);
                 } catch (e) { }
 
-                // FALLBACK: Proceed anyway (don't block purchase based on flaky verification)
-                // return { success: false, ... } // OLD STRICT BEHAVIOR
+                // Return failure - don't add to cart if nothing is in tracker
+                return {
+                    success: false,
+                    totalReserved: 0,
+                    attempts,
+                    verificationFailed: true,
+                    claimedAmount: totalReserved
+                };
             } else if (verification.quantity !== totalReserved && !verification.verificationSkipped) {
                 console.log(`\n⚠️ WARNING: Claimed ${totalReserved} units but only ${verification.quantity} in tracker!`);
-                console.log(`   Keeping original claimed amount (Trusting initial success over tracker scrape)`);
+                console.log(`   Using VERIFIED count from tracker (${verification.quantity}) instead of claimed (${totalReserved})`);
                 return {
-                    success: true,
-                    totalReserved: totalReserved, // Keeping original, not using verification.quantity which might be 0 due to scrape error
+                    success: verification.quantity > 0,
+                    totalReserved: verification.quantity, // Use actual verified count, not claimed
                     attempts,
-                    verificationMismatch: true
+                    verificationMismatch: true,
+                    claimedAmount: totalReserved
                 };
             } else {
                 console.log(`\n✅ Verification passed: ${verification.quantity} units confirmed in tracker`);

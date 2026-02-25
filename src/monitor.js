@@ -320,16 +320,25 @@ class Monitor {
             }
         }
         
-        logger.log(`   📝 Reserving up to ${totalBuyable} units on BFMR...`);
-        const reserveResult = await this.bfmrWeb.reserveIncrementally(deal.deal_code, 2, totalBuyable);
+        // Use the larger max_per_order as batch size for efficiency
+        const batchSize = Math.max(amazonMaxQty, bestbuyMaxQty);
+        logger.log(`   📝 Reserving up to ${totalBuyable} units on BFMR (batch size: ${batchSize})...`);
+        const reserveResult = await this.bfmrWeb.reserveIncrementally(deal.deal_code, batchSize, totalBuyable);
         
         if (!reserveResult.success || reserveResult.totalReserved === 0) {
-            logger.log('   ⚠️ Could not reserve any units on BFMR - limit may be reached');
+            if (reserveResult.verificationFailed) {
+                logger.log(`   ❌ BFMR reservation verification FAILED - claimed ${reserveResult.claimedAmount} but tracker shows 0`);
+            } else {
+                logger.log('   ⚠️ Could not reserve any units on BFMR - limit may be reached');
+            }
             this.dealManager.markAsFailed(deal.deal_id);
             return;
         }
 
-        logger.log(`   ✅ Reserved ${reserveResult.totalReserved} units on BFMR`);
+        if (reserveResult.verificationMismatch) {
+            logger.log(`   ⚠️ Verification mismatch: claimed ${reserveResult.claimedAmount}, tracker shows ${reserveResult.totalReserved}`);
+        }
+        logger.log(`   ✅ VERIFIED: ${reserveResult.totalReserved} units reserved on BFMR`);
 
         // ========== PHASE 4: SPLIT AND BUY FROM EACH RETAILER ==========
         
